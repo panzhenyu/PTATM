@@ -1,7 +1,7 @@
 import numpy
 
 # Provides helper functions for graph operation.
-class GraphTools:
+class GraphTool:
     # Traversal whole graph begin with start node, return all node found.
     # [in]  start           Start point of the whole traversal.
     # [in]  getNeighbor     A function object provides a node list of current node which will be traveled in next iteration.
