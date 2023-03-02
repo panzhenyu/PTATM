@@ -1,50 +1,4 @@
-from abc import abstractmethod
-from lib2to3.pytree import Node
 import angr
-from more_itertools import last
-
-# Save information for basic block.
-# class Block:
-#     @staticmethod
-#     def init(addr, arch, bytes, disassembly, instruction_addrs, instructions, size):
-#         block = Block()
-#         # First instruction address.
-#         block.addr = addr
-#         # Instruction arch.
-#         block.arch = arch
-#         # Bytes value of instructions.
-#         block.bytes = bytes
-#         # Disassembly code of instructions.
-#         block.disassembly = disassembly
-#         # Instruction addrs.
-#         block.instruction_addrs = instruction_addrs
-#         # Instruction num.
-#         block.instructions = instructions
-#         # Basic block size.
-#         block.size = size
-#         return block
-
-#     @staticmethod
-#     def fromAngrBlock(angr_block: angr.block.Block):
-#         block = Block()
-#         block.addr = angr_block.addr
-#         block.arch = angr_block.arch
-#         block.bytes = angr_block.bytes
-#         block.disassembly = angr_block.disassembly
-#         block.instruction_addrs = angr_block.instruction_addrs
-#         block.instructions = angr_block.instructions
-#         return block
-    
-#     def copy(self):
-#         blk = Block()
-#         blk.addr = self.addr
-#         blk.arch = self.arch.copy()
-#         blk.bytes = self.bytes
-#         blk.disassembly = self.disassembly
-#         blk.instruction_addrs = self.instruction_addrs.copy()
-#         blk.instructions = self.instructions
-#         blk.size = self.size
-#         return blk
 
 # Save flow related information for basic block.
 class CFGNode:
@@ -179,23 +133,15 @@ class Function:
 
         return func
 
-    def rebuildControlFlow(self):
-        for node in self.nodes.values():
-            angrNode = self.angr_function.get_node(node.addr)
-            for successor in angrNode.successors():
-                if isinstance(successor, angr.codenode.BlockNode):
-                    # Link to a node.
-                    assert(successor.addr in self.node_addrs_set)
-                    node.appendSuccessor(self.getNode(successor.addr))
-                elif isinstance(successor, angr.knowledge_plugins.functions.function.Function):
-                    # Link to a function, add it to callees if successor.addr != self.addr.
-                    if successor.addr == self.addr:
-                        self.is_recursive = True
-                    else:
-                        self.callees.add(successor.addr)
-                else:
-                    # May be we should report an error?
-                    pass
+    # Modifier
+    def appendNode(self, node: CFGNode):
+        pass
+
+    def removeNode(self, node: CFGNode):
+        pass
+
+    def removeNodeByAddr(self, addr: int):
+        pass
 
     # Accessor
     def getNode(self, addr: int):
@@ -204,55 +150,67 @@ class Function:
         return self.nodes[addr]
 
 class CFG:
+    # [Attribute]
+    #   angr_cfg                Original angr cfg object we build from.
+    #   nodes                   A dict(addr:int -> node:CFGNode) of all nodes within this CFG.
+    #   functions               A dict(name:str -> func:Function) of all function within this CFG.
+    # [Member]
+    #   get_node                Get CFG node by addr.
     @staticmethod
-    def init(angr_cfg: angr.analyses.cfg.cfg_fast.CFGFast, entrypoint: CFGNode):
-        cfg = CFG()
+    def fromAngrCFG(angr_cfg: angr.analyses.cfg.cfg_fast.CFGFast):
         # Normalize this cfg first if not normalized.
         if not angr_cfg.normalized:
             angr_cfg.normalize()
-        # The original CFG we build from.
+
+        # Build CFG object.
+        cfg = CFG()
         cfg.angr_cfg = angr_cfg
-        # Entry CFG node.
-        cfg.entrypoint = entrypoint
-        # Exit CFG nodes.
-        cfg.endpoints = []
-        # CFGNode map, addr:int -> node:CFGNode.
-        # Note that same CFGNode may have multiple instances due to their different contexts.
-        cfg.node_map = {entrypoint.addr: [entrypoint]}
-        # Unresolved block addresses with indirect jump.
-        cfg.unresolved_blocks = []
+        cfg.nodes = {}
+        cfg.functions = {}
+
         return cfg
     
-    # TODO: Copy entire CFG, update predecessors and successors for every CFGNode.
-    def copy(self):
-        cfg = CFG()
-        cfg.orig_cfg = self.orig_cfg
-        cfg.entrypoint = self.entrypoint.copy()
-        cfg.endpoints = [end.copy() for end in self.endpoints]
-        cfg.node_map = {addr:node.copy() for addr, node in self.node_map.items()}
-        cfg.unresolved_blocks = self.unresolved_blocks.copy()
-
     # Modifier
     def appendCFGNode(self, node: CFGNode):
-        if node.addr not in self.node_map:
-            self.node_map[node.addr] = [node]
-        elif node not in self.node_map[node.addr]:
-            self.node_map[node.addr].append(node)
-        return self
-
-    def appendEndpoint(self, node: CFGNode):
-        if node not in self.endpoints:
-            self.endpoints.append(node)
-        return self
-
-    def appendUnresolvedBlock(self, addr: int):
-        if addr not in self.unresolved_blocks:
-            self.unresolved_blocks.append(addr)
-        return self
+        if node.addr not in self.nodes:
+            self.nodes[node.addr] = node
+            return True
+        return False
     
+    def removeCFGNode(self, node: CFGNode):
+        return self.removeCFGNodeByAddr(node.addr)
+    
+    def removeCFGNodeByAddr(self, addr: int):
+        if addr in self.nodes:
+            self.nodes.pop(addr)
+            return True
+        return False
+    
+    def appendFunction(self, func: Function):
+        name, nodes = func.name, func.nodes | self.nodes
+        if name not in self.functions and len(nodes) == len(func.nodes) + len(self.nodes):
+            self.functions[name] = func
+            self.nodes = nodes
+            return True
+        return False
+
+    def removeFunction(self, name: str):
+        func = self.getFunc()
+        if None == func:
+            return False
+        for addr in func.nodes.keys():
+            self.removeCFGNodeByAddr(addr)
+        return True
+
     # Accessor
     def getAnyNode(self, addr: int):
-        return self.node_map[addr][0] if addr in self.node_map else None
+        return self.nodes.get(addr)
 
-    def getAllNodes(self, addr: int):
-        return self.node_map[addr] if addr in self.node_map else None
+    def getFunc(self, name: str):
+        return self.functions.get(name)
+
+    def getFuncByAddr(self, addr: int):
+        node = self.getAnyNode(addr)
+        if None != node and node.addr == node.function_address:
+            return True
+        return None

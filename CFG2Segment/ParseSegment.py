@@ -1,4 +1,4 @@
-from SFGParser import *
+from SFG import *
 
 target = "/usr/local/software/mibench/network/dijkstra/dijkstra_small"
 # automotive
@@ -28,10 +28,10 @@ fft = "/home/pzy/project/mibench/telecomm/FFT/fft"
 gsm_toast = "/home/pzy/project/mibench/telecomm/gsm/bin/toast"
 gsm_untoast = "/home/pzy/project/mibench/telecomm/gsm/bin/untoast"
 # other bench
-benchmark = "/home/pzy/project/CFG2Segment/benchmark"
-test = "/home/pzy/project/CFG2Segment/test"
+benchmark = "/home/pzy/project/PTATM/CFG2Segment/benchmark"
+test = "/home/pzy/project/PTATM/CFG2Segment/test"
 
-p = angr.Project(test, load_options={'auto_load_libs': False})
+p = angr.Project(benchmark, load_options={'auto_load_libs': False})
 cfg = p.analyses.CFGFast()
 cfg.normalize()
 entry = cfg.functions.get("main")
