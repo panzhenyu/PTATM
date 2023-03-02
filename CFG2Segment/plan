@@ -1,0 +1,12 @@
+[binary]
+/home/pzy/project/CFG2Segment/benchmark
+
+[iter]
+10
+
+[uprobe]
+main main%return cmd1 cmd2 cmd3
+main
+main%return
+main+0x31
+main+0x54
