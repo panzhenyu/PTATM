@@ -1,5 +1,6 @@
 from abc import abstractmethod
-from .Tool import GraphTools
+from .CFGBase import CFGNode
+from .Tool import GraphTool
 import angr
 
 # Save information for segment.
@@ -8,7 +9,7 @@ class Segment:
         # Segment name.
         self.name = None
         # CFG object this segment belongs to.
-        self.cfg = None
+        # self.cfg = None
         # Start point of this segment.
         self.startpoint = None
         # End point of this segment.
@@ -33,26 +34,53 @@ class Segment:
         self.predecessors.remove(segment)
         segment.successors.remove(self)
 
+class SegmentFunction:
+    def __init__(self) -> None:
+        # Function object we build from.
+        self.function = None
+        # Segment list that saves segments in order.
+        self.segments = list()
+        # Start segment.
+        self.start_segment = None
+        # End segment.
+        self.end_segment = None
+        # Reserve node addresses of separate points.
+        self.separators = set()
+
+    # Modifier
+    def appendSeparator(self, separator: CFGNode):
+        if separator in self.separators:
+            return False
+        self.separators.add(separator)
+        return True
+
+    def removeSeparator(self, separator: CFGNode):
+        if separator not in self.separators:
+            return False
+        self.separators.remove(separator)
+        return True
+
+    def makeSegment(self):
+        # Sort address first.
+        sorted_seps = sorted(self.separators)
+        # Start point is self.function.startpoint, end point is when control flow leaves this function(return or exit).
+        # Thus the last segment doesn't has endpoint member(Cause default is function return or call the exit/_exit).
+        
+        return True
+
+    # Accessor
+    def getSegment(self, index: int):
+        if index >= len(self.segments):
+            return None
+        return self.segments[index]
+
 # Save information for segment flow graph.
 class SFG:
     def __init__(self) -> None:
         # CFG object this SFG belongs to.
         self.cfg = None
         # All segment nodes.
-        self.nodes = dict()
-
-class SFGBuilder:
-    @abstractmethod
-    def buildFrom(self, target) -> SFG:
-        pass
-
-class CFGBasedBuilder(SFGBuilder):
-    def buildFrom(self, target) -> SFG:
-        pass
-
-class AngrCFGBasedBuilder(SFGBuilder):
-    def buildFrom(self, target) -> SFG:
-        pass
+        self.functions = dict()
 
 class AbstractSFGParser:
     @abstractmethod
@@ -137,8 +165,8 @@ class BlockCheckParser(AbstractSegmentListParser):
         if targetNode == entryNode:
             return False
         # Get target set and entry set.
-        targetSet = GraphTools.traversal(targetNode, lambda x: x.successors, lambda _: False)
-        entrySet = GraphTools.traversal(entryNode, lambda x: x.successors, lambda x: x == targetNode)
+        targetSet = GraphTool.traversal(targetNode, lambda x: x.successors, lambda _: False)
+        entrySet = GraphTool.traversal(entryNode, lambda x: x.successors, lambda x: x == targetNode)
         # targetNode is a separator only if targetSet & entrySet matchs a empty set.
         # Return valid targetNode.
         # return 0 != len(targetSet&endPoints) and 0 == len(targetSet&entrySet-endPoints)

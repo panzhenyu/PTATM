@@ -1,13 +1,13 @@
 from abc import abstractmethod
-from . import BasicStruct
+from . import CFGBase
 import angr
 
-class ControlFlowRefactor:
+class CFGRefactor:
     @abstractmethod
     def refactor(self, target) -> bool:
         pass
 
-class FunctionRefactor(ControlFlowRefactor):
+class FunctionRefactor(CFGRefactor):
     def __init__(self):
         # Save unsolved angr block nodes for each refactor.
         self.unresolved_block = list()
@@ -17,9 +17,9 @@ class FunctionRefactor(ControlFlowRefactor):
         self.emptyblock_addr = list()
 
     # This refactor simply considers that indirect call always returns to the next block directly.
-    def refactor(self, target: BasicStruct.Function):
+    def refactor(self, target: CFGBase.Function):
         # Type checking.
-        if not isinstance(target, BasicStruct.Function):
+        if not isinstance(target, CFGBase.Function):
             return False
 
         # Reset status.
@@ -59,16 +59,16 @@ class FunctionRefactor(ControlFlowRefactor):
                         self.unresolved_block.append(successor)
         return True
 
-class FunctionalCFGRefactor(ControlFlowRefactor):
+class FunctionalCFGRefactor(CFGRefactor):
     def __init__(self):
         # Save failed function object for each refactor.
         self.failed = list()
         # Save passed function object for each refactor.
         self.passed = list()
 
-    def refactor(self, target: BasicStruct.CFG):
+    def refactor(self, target: CFGBase.CFG):
         # Type checking.
-        if not isinstance(target, BasicStruct.CFG):
+        if not isinstance(target, CFGBase.CFG):
             return False
         
         # Reset status.
@@ -79,7 +79,7 @@ class FunctionalCFGRefactor(ControlFlowRefactor):
         # Do refactor for each function.
         for angrFunc in target.angr_cfg.functions.values():
             # Build function object.
-            func = BasicStruct.Function.fromAngrFunction(angrFunc, target.angr_cfg)
+            func = CFGBase.Function.fromAngrFunction(angrFunc, target.angr_cfg)
             if func.is_plt or func.has_unresolved_jumps or func.is_simprocedure or 0 == func.size:
                 # Ignore plt function and those who has unresolved jumps.
                 self.passed.append(func)

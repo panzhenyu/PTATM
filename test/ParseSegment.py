@@ -1,7 +1,7 @@
 import sys
 sys.path.append("..")
 
-from CFG2Segment.SFG import *
+from CFG2Segment.SFGBase import *
 
 target = "/usr/local/software/mibench/network/dijkstra/dijkstra_small"
 # automotive

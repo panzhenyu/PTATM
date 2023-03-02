@@ -2,9 +2,10 @@ import sys
 sys.path.append("..")
 
 import angr
-from CFG2Segment.SFG import *
-from CFG2Segment.BasicStruct import *
-from CFG2Segment.ControlFlowRefactor import *
+from CFG2Segment.CFGBase import *
+from CFG2Segment.SFGBase import *
+from CFG2Segment.CFGRefactor import *
+from CFG2Segment.Tool import *
 
 # automotive
 basicmath_large = "/home/pzy/project/mibench/automotive/basicmath/basicmath_large"
@@ -42,9 +43,12 @@ mycfg = CFG.fromAngrCFG(cfg)
 
 refactor = FunctionalCFGRefactor()
 print(refactor.refactor(mycfg))
+print([hex(func.addr) for func in refactor.failed])
+for func in mycfg.functions.values():
+    print(hex(func.addr), [hex(node.addr) for node in func.endpoints])
 
-graph = {hex(func.addr):[hex(addr) for addr in func.callees] for func in mycfg.functions.values()}
-print(graph)
+# graph = {hex(func.addr):[hex(addr) for addr in func.callees] for func in mycfg.functions.values()}
+# print(graph)
 
-keys = list(graph.keys())
-print(GraphTools.topologicalSort(graph, keys))
+# keys = list(graph.keys())
+# print(GraphTool.topologicalSort(graph, keys))
