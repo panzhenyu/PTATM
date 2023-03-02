@@ -22,9 +22,9 @@ class CFGNode:
         # Function address.
         node.function_address = function_address
         # Predecessor CFG nodes.
-        node.predecessors = []
+        node.predecessors = list()
         # Successor CFG nodes.
-        node.successors = []
+        node.successors = list()
         return node
 
     @staticmethod
@@ -33,13 +33,13 @@ class CFGNode:
         node.name = angr_node.name
         node.block = angr_node.block
         node.block_id = angr_node.block_id
-        node.addr = node.block.addr
-        node.size = node.block.size
+        node.addr = angr_node.addr
+        node.size = angr_node.size
         node.is_syscall = angr_node.is_syscall
         node.has_return = angr_node.has_return
         node.function_address = angr_node.function_address
-        node.predecessors = []
-        node.successors = []
+        node.predecessors = list()
+        node.successors = list()
         return node
 
     def copy(self):
@@ -53,27 +53,28 @@ class CFGNode:
         node.has_return = self.has_return
         node.function_address = self.function_address
         # Do not copy the neighborhoods, left it to CFG copy.
-        node.predecessors = []
-        node.successors = []
+        node.predecessors = list()
+        node.successors = list()
         return node
 
     # Modifier
-    def appendSuccessor(self, CFGNode):
-        if CFGNode not in self.successors:
-            self.successors.append(CFGNode)
-            CFGNode.predecessors.append(self)
+    def appendSuccessor(self, node):
+        if node not in self.successors:
+            self.successors.append(node)
+            node.predecessors.append(self)
             return self
         return None
 
-    def removeSuccessor(self, CFGNode):
+    def removeSuccessor(self, node):
         # Raise exception anyway.
-        self.predecessors.remove(CFGNode)
-        CFGNode.successors.remove(self)
+        self.predecessors.remove(node)
+        node.successors.remove(self)
 
 # Save function related information.
 class Function:
     # [Attribute]
     #   addr                    Function address.
+    #   size                    Function size.
     #   name                    Function name.
     #   binary_name             Binary name of this function.
     #   angr_function           Original angr function object.
@@ -87,6 +88,8 @@ class Function:
     #   has_unresolved_jumps    Whether this function has unresolved jumps.
     #   is_plt                  Whether this function is a plt function.
     #   is_syscall              Whether this function is a syscall.
+    #   is_simprocedure         Whether this function is a simprocedure. (is_simprocedure? Maybe a hook function that doesn't exist?)
+    #   is_default_name         Whether the function name is a default name(default name cannot be used to probe directly).
     #   offset                  Function offset.
     #   callees                 A list of function address that may be called by this function.
     #   is_recursive            Whether this function is a recursive function.
@@ -105,6 +108,7 @@ class Function:
         # Build function object.
         func = Function()
         func.addr = angr_function.addr
+        func.size = angr_function.size
         func.name = angr_function.name
         func.binary_name = angr_function.binary_name
         # func.angr_cfg = angr_cfg
@@ -112,20 +116,22 @@ class Function:
         func.node_addrs_set = angr_function.block_addrs_set.copy()
         func.nodes = {addr:CFGNode.fromAngrCFGNode(angr_cfg.get_any_node(addr)) for addr in func.node_addrs_set}
         func.startpoint = func.getNode(func.addr)
-        func.endpoints = [func.getNode(node.addr) for node in angr_function.endpoints]
-        func.endpoints_with_type = {type:set([func.getNode(node.addr) for node in nodes]) for type, nodes in angr_function.endpoints_with_type.items() if len(nodes) != 0}
+        func.endpoints = [func.getNode(node.addr) for node in angr_function.endpoints if node is not None]
+        func.endpoints_with_type = {type:set([func.getNode(node.addr) for node in nodes if node is not None]) for type, nodes in angr_function.endpoints_with_type.items()}
         func.has_return = angr_function.has_return
         func.has_unresolved_calls = angr_function.has_unresolved_calls
         func.has_unresolved_jumps = angr_function.has_unresolved_jumps
         func.is_plt = angr_function.is_plt
         func.is_syscall = angr_function.is_plt
+        func.is_simprocedure = angr_function.is_simprocedure
+        func.is_default_name = angr_function.is_default_name
         func.offset = angr_function.offset
         func.callees = set()
         func.is_recursive = False
 
         # Double check endpoints.
         for endpoint in func.endpoints:
-            if 'call' not in endpoint.block.disassembly.insns[-1].mnemonic and not endpoint.has_return:
+            if endpoint.block is None or 'call' not in endpoint.block.disassembly.insns[-1].mnemonic and not endpoint.has_return:
                 func.endpoints.remove(endpoint)
 
         assert(None != func.startpoint)

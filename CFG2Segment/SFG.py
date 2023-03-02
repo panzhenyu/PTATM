@@ -1,19 +1,58 @@
 from abc import abstractmethod
-from platform import node
-import angr, CFGParser
+from .Tool import GraphTools
+import angr
 
 # Save information for segment.
-# A segment is a CFG.
-class Segment(CFGParser.CFG):
-    pass
+class Segment:
+    def __init__(self) -> None:
+        # Segment name.
+        self.name = None
+        # CFG object this segment belongs to.
+        self.cfg = None
+        # Start point of this segment.
+        self.startpoint = None
+        # End point of this segment.
+        self.endpoint = None
+        # Segment has return?
+        self.has_return = None
+        # Predecessors of this segment.
+        self.predecessors = list()
+        # Successors of this segment.
+        self.successors = list()
+    
+    # Modifier
+    def appendSuccessor(self, segment):
+        if segment not in self.successors:
+            self.successors.append(segment)
+            segment.predecessors.append(self)
+            return self
+        return None
+
+    def removeSuccessor(self, segment):
+        # Raise exception anyway.
+        self.predecessors.remove(segment)
+        segment.successors.remove(self)
 
 # Save information for segment flow graph.
 class SFG:
-    pass
+    def __init__(self) -> None:
+        # CFG object this SFG belongs to.
+        self.cfg = None
+        # All segment nodes.
+        self.nodes = dict()
 
-# A particular situation for segment flow graph.
-class SegmentList(SFG):
-    pass
+class SFGBuilder:
+    @abstractmethod
+    def buildFrom(self, target) -> SFG:
+        pass
+
+class CFGBasedBuilder(SFGBuilder):
+    def buildFrom(self, target) -> SFG:
+        pass
+
+class AngrCFGBasedBuilder(SFGBuilder):
+    def buildFrom(self, target) -> SFG:
+        pass
 
 class AbstractSFGParser:
     @abstractmethod
@@ -60,9 +99,9 @@ class PathSearchParser(AbstractSegmentListParser):
         # Get all end points.
         endPoints = self.defaultEndPoints(angrCFG, entryNode)
         # DFS stack: (CFGNode, depth)
-        bs, path = [(entryNode, 0)], []
+        bs, path = [(entryNode, 0)], list()
         # candidates: {CFGNode: num}
-        pathNum, candidates, circleNode = 0, {}, set([])
+        pathNum, candidates, circleNode = 0, {}, set()
         while len(bs) > 0:
             curNode, depth = bs.pop()
             pathLen = len(path)
@@ -107,7 +146,7 @@ class BlockCheckParser(AbstractSegmentListParser):
 
     def searchValidPath(self, entryNode, endPoints: set):
         # DFS stack: (CFGNode, depth)
-        bs, path = [(entryNode, 0)], []
+        bs, path = [(entryNode, 0)], list()
         while len(bs) > 0:
             curNode, depth = bs.pop()
             # Update path, here curNode won't cause a circle.
@@ -125,7 +164,7 @@ class BlockCheckParser(AbstractSegmentListParser):
                     return path
                 else:
                     bs.append((successor, depth+1))
-        return []
+        return list()
 
     @abstractmethod
     def parseFromAngrCFG(self, angrCFG: angr.analyses.cfg.cfg_fast.CFGFast, entry: int):
@@ -141,21 +180,3 @@ class BlockCheckParser(AbstractSegmentListParser):
         # path = self.searchValidPath(entryNode, endPoints)
         # Collect all separate nodes.
         return [node for node in path if self.isSeparateNode(node, entryNode, endPoints)]
-
-# Provides helper functions for graph operation.
-class GraphTools:
-    # Traversal whole graph begin with start node, return all node found.
-    # [in]  start           Start point of the whole traversal.
-    # [in]  getNeighbor     A function object provides a node list of current node which will be traveled in next iteration.
-    # [in]  ignoreNeighbor  A function object tells us whether travel a node or not.
-    # [out]                 A traveled node list.
-    def traversal(start, getNeighbor, ignoreNeighbor) -> set:
-        visit, stack = set([start]), [start]
-        while len(stack) > 0:
-            cur = stack.pop()
-            for node in getNeighbor(cur):
-                if node in visit or ignoreNeighbor(node):
-                    continue
-                visit.add(node)
-                stack.append(node)
-        return visit

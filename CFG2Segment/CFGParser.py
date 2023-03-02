@@ -1,6 +1,7 @@
 from abc import abstractmethod
 import angr
-from BasicStruct import *
+from .BasicStruct import *
+
 class AbstractCFGParser:
     @abstractmethod
     def parseFromAngrCFG(self, angrCFG: angr.analyses.cfg.cfg_fast.CFGFast, entry: int, end: int = None):
