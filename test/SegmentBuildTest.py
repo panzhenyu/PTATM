@@ -1,11 +1,13 @@
 import sys
 sys.path.append("..")
 
-from CFG2Segment.SFGBase import *
-from CFG2Segment.SFGBuilder import *
 import angr
+from CFG2Segment.CFGBase import *
+from CFG2Segment.SFGBase import *
+from CFG2Segment.CFGRefactor import *
+from CFG2Segment.SFGBuilder import *
+from CFG2Segment.Tool import *
 
-target = "/usr/local/software/mibench/network/dijkstra/dijkstra_small"
 # automotive
 basicmath_large = "/home/pzy/project/mibench/automotive/basicmath/basicmath_large"
 basicmath_small = "/home/pzy/project/mibench/automotive/basicmath/basicmath_small"
@@ -32,16 +34,20 @@ crc = "/home/pzy/project/mibench/telecomm/CRC32/crc"
 fft = "/home/pzy/project/mibench/telecomm/FFT/fft"
 gsm_toast = "/home/pzy/project/mibench/telecomm/gsm/bin/toast"
 gsm_untoast = "/home/pzy/project/mibench/telecomm/gsm/bin/untoast"
-# other bench
+
 benchmark = "/home/pzy/project/PTATM/benchmark/benchmark"
 test = "/home/pzy/project/PTATM/benchmark/test"
 
-p = angr.Project(test, load_options={'auto_load_libs': False})
+p = angr.Project(dijkstra_large, load_options={'auto_load_libs': False})
 cfg = p.analyses.CFGFast()
-cfg.normalize()
-entry = cfg.functions.get("main")
+mycfg = CFG.fromAngrCFG(cfg)
 
-# print("path search result:")
-# print([hex(node.addr) for node in PathSearchParser().parseFromAngrCFG(cfg, entry.addr)])
-print("block check result:")
-print([hex(node.addr) for node in BlockCheckParser().parseFromAngrCFG(cfg, entry.addr)])
+refactor = FunctionalCFGRefactor()
+print(refactor.refactor(mycfg))
+print([hex(func.addr) for func in refactor.failed])
+
+main = mycfg.getFunc("main")
+result = BlockCheckSearcher().search(main.startpoint, set(main.endpoints), lambda x: x.successors)
+result_addr = [hex(node.addr) for node in result]
+result_addr.sort()
+print(result_addr)

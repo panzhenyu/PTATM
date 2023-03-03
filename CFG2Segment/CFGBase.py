@@ -78,11 +78,11 @@ class Function:
     #   name                    Function name.
     #   binary_name             Binary name of this function.
     #   angr_function           Original angr function object.
-    #   node_addrs_set          A list of all CFG nodes' address.
+    #   node_addrs_set          A set of all CFG nodes' address.
     #   nodes                   A dict which maps all addr to corresponding CFG node within this function.
     #   startpoint              Entry CFG node of this function.
     #   endpoints               A list of CFG nodes which can leave this function.
-    #   endpoints_with_type     A dict maps ending type to endpoint.
+    #   endpoints_with_type     A dict maps ending type to endpoints.
     #   has_return              Whether this function has return.
     #   has_unresolved_calls    Whether this function has unresolved calls.
     #   has_unresolved_jumps    Whether this function has unresolved jumps.
@@ -91,7 +91,7 @@ class Function:
     #   is_simprocedure         Whether this function is a simprocedure. (is_simprocedure? Maybe a hook function that doesn't exist?)
     #   is_default_name         Whether the function name is a default name(default name cannot be used to probe directly).
     #   offset                  Function offset.
-    #   callees                 A list of function address that may be called by this function.
+    #   callees                 A set of function address that may be called by this function.
     #   is_recursive            Whether this function is a recursive function.
     # [Member]
     #   get_node                Get CFG node by addr.
@@ -131,7 +131,7 @@ class Function:
 
         # Double check endpoints.
         for endpoint in func.endpoints:
-            if endpoint.block is None or 'call' not in endpoint.block.disassembly.insns[-1].mnemonic and not endpoint.has_return:
+            if (endpoint.block is None or 'call' not in endpoint.block.disassembly.insns[-1].mnemonic) and not endpoint.has_return:
                 func.endpoints.remove(endpoint)
 
         assert(None != func.startpoint)
@@ -167,13 +167,11 @@ class CFG:
         # Normalize this cfg first if not normalized.
         if not angr_cfg.normalized:
             angr_cfg.normalize()
-
         # Build CFG object.
         cfg = CFG()
         cfg.angr_cfg = angr_cfg
-        cfg.nodes = {}
-        cfg.functions = {}
-
+        cfg.nodes = dict()
+        cfg.functions = dict()
         return cfg
     
     # Modifier
@@ -201,7 +199,7 @@ class CFG:
         return False
 
     def removeFunction(self, name: str):
-        func = self.getFunc()
+        func = self.getFunc(name)
         if None == func:
             return False
         for addr in func.nodes.keys():
@@ -216,7 +214,7 @@ class CFG:
         return self.functions.get(name)
 
     def getFuncByAddr(self, addr: int):
-        node = self.getAnyNode(addr)
-        if None != node and node.addr == node.function_address:
-            return True
+        for func in self.functions.values():
+            if func.addr == addr:
+                return func
         return None

@@ -44,8 +44,6 @@ mycfg = CFG.fromAngrCFG(cfg)
 refactor = FunctionalCFGRefactor()
 print(refactor.refactor(mycfg))
 print([hex(func.addr) for func in refactor.failed])
-for func in mycfg.functions.values():
-    print(hex(func.addr), [hex(node.addr) for node in func.endpoints])
 
 # graph = {hex(func.addr):[hex(addr) for addr in func.callees] for func in mycfg.functions.values()}
 # print(graph)

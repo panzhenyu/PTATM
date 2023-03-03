@@ -72,7 +72,6 @@ class FunctionalCFGRefactor(CFGRefactor):
             return False
         
         # Reset status.
-        result = True
         self.failed.clear()
         self.passed.clear()
 
@@ -87,5 +86,4 @@ class FunctionalCFGRefactor(CFGRefactor):
                 # Refactor the function object.
                 if not FunctionRefactor().refactor(func) or not target.appendFunction(func):
                     self.failed.append(func)
-                    result = False
-        return result
+        return 0 == len(self.failed)
