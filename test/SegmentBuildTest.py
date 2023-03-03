@@ -38,15 +38,34 @@ gsm_untoast = "/home/pzy/project/mibench/telecomm/gsm/bin/untoast"
 benchmark = "/home/pzy/project/PTATM/benchmark/benchmark"
 test = "/home/pzy/project/PTATM/benchmark/test"
 
-p = angr.Project(dijkstra_large, load_options={'auto_load_libs': False})
+p = angr.Project("/usr/local/software/spec2017/benchspec/CPU/557.xz_r/run/run_base_refrate_mytest-m64.0000/xz_r_base.mytest-m64", load_options={'auto_load_libs': False})
 cfg = p.analyses.CFGFast()
 mycfg = CFG.fromAngrCFG(cfg)
 
 refactor = FunctionalCFGRefactor()
 print(refactor.refactor(mycfg))
-print([hex(func.addr) for func in refactor.failed])
+# print([hex(func.addr) for func in refactor.failed])
 
 main = mycfg.getFunc("main")
+# print([hex(end.addr) for end in mycfg.getFunc("main").endpoints])
+
+# segBuilder = FunctionalSegmentListBuilder(2)
+# smain = SegmentFunction(main)
+# print("build result:", segBuilder.build(smain))
+# print("err seps:", [hex(addr) for addr in segBuilder.error_seps])
+# print("seps:", [hex(addr) for addr in segBuilder.separators])
+# print("len(segments):", len(smain.segments))
+# print("segments:")
+# for seg in smain.segments:
+#     print(seg.name + " " + hex(seg.startpoint.addr))
+
+sfgBuilder = FunctionalSFGBuilder(2, ["main"])
+sfg = SFG(mycfg)
+print("build result:", sfgBuilder.build(sfg))
+print("build failed func:", sfgBuilder.build_failed)
+print("append failed func:", sfgBuilder.append_failed)
+print("all segs:", list(sfg.segments.keys()))
+
 result = BlockCheckSearcher().search(main.startpoint, set(main.endpoints), lambda x: x.successors)
 result_addr = [hex(node.addr) for node in result]
 result_addr.sort()

@@ -7,8 +7,23 @@ class CFGRefactor:
     def refactor(self, target) -> bool:
         pass
 
+class FunctionReset(CFGRefactor):
+    def refactor(self, target: CFGBase.Function) -> bool:
+        # Type checking.
+        if not isinstance(target, CFGBase.Function):
+            return False
+
+        # Reset target members.
+        target.callees.clear()
+        for node in target.nodes.values():
+            node.predecessors.clear()
+            node.successors.clear()
+
+        return True
+
 class FunctionRefactor(CFGRefactor):
     def __init__(self):
+        super().__init__()
         # Save unsolved angr block nodes for each refactor.
         self.unresolved_block = list()
         # Save angr block nodes that aren't exist in target.node_addrs_set.
@@ -21,6 +36,9 @@ class FunctionRefactor(CFGRefactor):
         # Type checking.
         if not isinstance(target, CFGBase.Function):
             return False
+        
+        # Reset target.
+        FunctionReset().refactor(target)
 
         # Reset status.
         self.unresolved_block.clear()
@@ -59,8 +77,21 @@ class FunctionRefactor(CFGRefactor):
                         self.unresolved_block.append(successor)
         return True
 
+class FunctionCFGReset(CFGRefactor):
+    def refactor(self, target: CFGBase.CFG):
+        # Type checking.
+        if not isinstance(target, CFGBase.CFG):
+            return False
+
+        # Reset target members.
+        target.nodes.clear()
+        target.functions.clear()
+        
+        return True
+
 class FunctionalCFGRefactor(CFGRefactor):
     def __init__(self):
+        super().__init__()
         # Save failed function object for each refactor.
         self.failed = list()
         # Save passed function object for each refactor.
@@ -71,6 +102,9 @@ class FunctionalCFGRefactor(CFGRefactor):
         if not isinstance(target, CFGBase.CFG):
             return False
         
+        # Reset target.
+        FunctionCFGReset().refactor(target)
+
         # Reset status.
         self.failed.clear()
         self.passed.clear()

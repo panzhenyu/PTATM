@@ -1,8 +1,9 @@
+from lib2to3.pytree import Node
 from . import CFGBase
 
 # Save information for segment.
 class Segment:
-    def __init__(self, name: str, start: CFGBase.CFGNode, end: CFGBase.CFGNode) -> None:
+    def __init__(self, name: str, start: CFGBase.CFGNode, end: CFGBase.CFGNode|None) -> None:
         # Segment name.
         self.name = name
         # Segment addr.
@@ -38,12 +39,14 @@ class SegmentFunction:
     def __init__(self, func: CFGBase.Function) -> None:
         # Function object we build from.
         self.function = func
+        # Function name.
+        self.name = func.name
         # Function address.
         self.addr = func.addr
         # Segment set that saves segments in order.
         self.segments = list()
         # Start segment.
-        self.start_segment = Segment()
+        self.start_segment = None
         # End segment set.
         self.end_segments = set()
 
@@ -63,7 +66,7 @@ class SFG:
         self.cfg = cfg
         # A dict maps(name:str -> segment:Segment) contains all segment nodes within this SFG.
         self.segments = dict()
-        # A dict maps(name:str -> function:CFGBase.Function) contains all segment nodes within this SFG.
+        # A dict maps(name:str -> function:SegmentFunction) contains all segment nodes within this SFG.
         self.functions = dict()
 
     # Modifier

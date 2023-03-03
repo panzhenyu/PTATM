@@ -87,20 +87,16 @@ class PathCoverSearcher(SegmentSearcher):
                 path = path[0:depth]
             path.append(cur)
             pathSet = set(path)
-            # Debug.
-            # print([hex(node.addr) for node in path])
             # Update bs for DFS.
             for successor in getSuccessors(cur):
                 # We met with a circle(successor-> ... -> cur).
                 if successor in pathSet:
-                    for node in path[path.index(successor):-1]:
+                    for node in path[path.index(successor):]:
                         circleNode.add(node)
                 # The path terminated when we met with endpoint.
                 elif successor in ends:
-                    # Debug.
-                    # print([hex(node.addr) for node in path])
                     # Skip the entryNode.
-                    for node in [validNode for validNode in path[1:] if validNode not in circleNode and validNode.size > 0]:
+                    for node in [validNode for validNode in path[1:] if validNode not in circleNode]:
                         candidates.setdefault(node, 0)
                         candidates[node] += 1
                     pathNum += 1
