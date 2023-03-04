@@ -3,7 +3,7 @@ TRACE_ROOT=/sys/kernel/tracing
 TRACE_FILE=${TRACE_ROOT}/trace
 EVENTS_ROOT=${TRACE_ROOT}/events
 
-HELP="usage: sudo bash thisfile plan output_dir owner."
+HELP="usage: sudo bash thisfile segment input output iter owner."
 
 # Check out root privilege.
 if [ $CURRENT_USER != "root" ]; then

@@ -34,6 +34,19 @@ class Segment:
         # Raise exception anyway.
         self.predecessors.remove(segment)
         segment.successors.remove(self)
+    
+    # Utils
+    SEG_NAME_SEP = '__'
+
+    @staticmethod
+    def makeSegmentPrefix(funcname: str):
+        return funcname + Segment.SEG_NAME_SEP
+
+    # Return None or [function name, segment no.]
+    @staticmethod
+    def parseSegmentName(segname: str):
+        sepidx = segname.rfind(Segment.SEG_NAME_SEP)
+        return None if -1 == sepidx else segname[:sepidx],segname[sepidx+len(Segment.SEG_NAME_SEP):]
 
 class SegmentFunction:
     def __init__(self, func: CFGBase.Function) -> None:
@@ -51,9 +64,6 @@ class SegmentFunction:
         self.end_segments = set()
 
     # Accessor
-    def segnamePrefix(self):
-        return self.function.name + "-"
-
     def getSegment(self, index: int):
         if index >= len(self.segments):
             return None
@@ -64,9 +74,9 @@ class SFG:
     def __init__(self, cfg: CFGBase.CFG) -> None:
         # CFG object this SFG belongs to.
         self.cfg = cfg
-        # A dict maps(name:str -> segment:Segment) contains all segment nodes within this SFG.
+        # A dict(name:str -> segment:Segment) contains all segment nodes within this SFG.
         self.segments = dict()
-        # A dict maps(name:str -> function:SegmentFunction) contains all segment nodes within this SFG.
+        # A dict(name:str -> function:SegmentFunction) contains all segment nodes within this SFG.
         self.functions = dict()
 
     # Modifier
@@ -107,10 +117,10 @@ class SFG:
     def getAnySegment(self, name: str):
         return self.segments.get(name)
 
-    def getFunc(self, name: str):
+    def getSegmentFunc(self, name: str):
         return self.functions.get(name)
 
-    def getFuncByAddr(self, addr: int):
+    def getSegmentFuncByAddr(self, addr: int):
         for func in self.functions.values():
             if func.addr == addr:
                 return func

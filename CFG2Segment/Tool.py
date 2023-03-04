@@ -60,11 +60,12 @@ class GraphTool:
         return topolist
 
 class SegmentSearcher:
-    # Traversal the whole graph begin with start node, return all node found.
+    # Traversal the whole graph begin with start node and search for separator point.
+    # Here a segment always begin with start, so the search only returns separators.
     # [in]  start           Start point of the whole traversal.
-    # [in]  ends            A function object provides a node list of current node which will be traveled in next iteration.
-    # [in]  getSuccessors   A function object tells us whether travel a node or not.
-    # [out]                 A set contains separators.
+    # [in]  ends            A set of endpoints.
+    # [in]  getSuccessors   A function object tells us successors of a node.
+    # [out]                 A set of separators.
     @abstractmethod
     def search(self, start, ends: set, getSuccessors) -> set:
         pass

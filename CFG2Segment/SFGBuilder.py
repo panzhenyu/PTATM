@@ -74,11 +74,11 @@ class FunctionalSegmentListBuilder(SFGBuilder):
             if end is None:
                 self.error_seps.add(addr)
                 continue
-            target.segments.append(SFGBase.Segment(target.segnamePrefix() + str(len(target.segments)), start, end))
+            target.segments.append(SFGBase.Segment(SFGBase.Segment.makeSegmentPrefix(target.function.name) + str(len(target.segments)), start, end))
             # Endpoint always belongs to the next segment.
             start = end
         # Append last segment.
-        target.segments.append(SFGBase.Segment(target.segnamePrefix() + str(len(target.segments)), start, None))
+        target.segments.append(SFGBase.Segment(SFGBase.Segment.makeSegmentPrefix(target.function.name) + str(len(target.segments)), start, None))
         # Make segment list.
         for i in range(len(target.segments)-1):
             target.segments[i].appendSuccessor(target.segments[i+1])
