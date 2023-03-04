@@ -8,8 +8,10 @@ from CFG2Segment.SFGBuilder import FunctionalSFGBuilder
 from CFG2Segment.Tool import GraphTool
 
 """
-python3 dumpseg.py [options] binary
-    -f, --func      function interests that separated by ',' and ordered by priority, default is main only.
+Usage: python3 dumpseg.py [options] binary
+Dump segment for interested functions of binary file.
+
+    -f, --func      function interested that separated by ',' and ordered by priority, default is main only.
     -s, --max-seg   max segment num, default is 2.
     -q, --quiet     do not output max_seg and topological list, default is True.
 
@@ -17,13 +19,11 @@ python3 dumpseg.py [options] binary
     [Fir.]  binary.
     [Sec.]  max_seg.
     [Thi.]  Topological list of interested functions(This infomation doesn't make sense for indirect calls).
-    [Fou.]  exit__0=exit
-    [Fif.]  _exit__0=_exit
     [Rest]  segment.name=function.name+offset
 """
 
 if __name__ == "__main__":
-    binary = "/home/pzy/project/PTATM/benchmark/benchmark"
+    binary = "/home/pzy/project/PTATM/benchmark/test"
     functions = list(set(["main"]))
     max_seg = 2
     quiet = True
@@ -41,12 +41,6 @@ if __name__ == "__main__":
     sfg = SFG(cfg)
     sfg_builder = FunctionalSFGBuilder(max_seg, functions)
     build_result = sfg_builder.build(sfg)
-
-    # Remove default exit points.
-    if "exit" in functions:
-        functions.remove("exit")
-    if "_exit" in functions:
-        functions.remove("_exit")
 
     # Collect calling graph and topological list for functions.
     # This step may remove some function from original function list(functions), cause some function may not exist or has a default name.
@@ -66,7 +60,7 @@ if __name__ == "__main__":
 
     # Collect probes from segment information.
     # Probe format: EVENT=PROBE => segment.name=function.name+offset
-    probes = [Segment.makeSegmentPrefix("exit")+'0=exit', Segment.makeSegmentPrefix("_exit")+'0=_exit']
+    probes = []
     for name in functions:
         segfunc = sfg.getSegmentFunc(name)
         for segment in segfunc.segments:
