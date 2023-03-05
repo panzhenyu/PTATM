@@ -71,7 +71,8 @@ def fetchSegmentAndTime(traceinfo: str) -> str:
     pure = str()
     for trace in [record.strip() for record in traceinfo.strip().split('\n')]:
         info = trace.split(' ')
-        pure += info[4][:-1] + ',' + info[5][:-1] + '\n'
+        # TODO: Direct index is unsafe.
+        pure += info[3][:-1] + ',' + info[4][:-1] + '\n'
     return pure
 
 # Returns (True, trace) or (False, error message).

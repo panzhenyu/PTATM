@@ -34,19 +34,6 @@ class Segment:
         # Raise exception anyway.
         self.predecessors.remove(segment)
         segment.successors.remove(self)
-    
-    # Utils
-    SEG_NAME_SEP = '__'
-
-    @staticmethod
-    def makeSegmentPrefix(funcname: str):
-        return funcname + Segment.SEG_NAME_SEP
-
-    # Return None or [function name, segment no.]
-    @staticmethod
-    def parseSegmentName(segname: str):
-        sepidx = segname.rfind(Segment.SEG_NAME_SEP)
-        return None if -1 == sepidx else segname[:sepidx],segname[sepidx+len(Segment.SEG_NAME_SEP):]
 
 class SegmentFunction:
     def __init__(self, func: CFGBase.Function) -> None:
@@ -68,6 +55,22 @@ class SegmentFunction:
         if index >= len(self.segments):
             return None
         return self.segments[index]
+
+    # Utils
+    SEG_NAME_SEP = '__'
+
+    def nextSegmentName(self):
+        return self.function.name + SegmentFunction.SEG_NAME_SEP + str(len(self.segments))
+
+    # Return None or [function name, segment no.]
+    @staticmethod
+    def parseSegmentName(segname: str):
+        sepidx = segname.rfind(Segment.SEG_NAME_SEP)
+        return None if -1 == sepidx else segname[:sepidx],segname[sepidx+len(Segment.SEG_NAME_SEP):]
+    
+    @staticmethod
+    def entrySegment(segno: str):
+        return segno == '0'
 
 # Save information for segment flow graph.
 class SFG:
@@ -101,6 +104,7 @@ class SFG:
             self.functions[name] = segmentFunc
             for seg in segmentFunc.segments:
                 # Here we assume segment name within different function must be different.
+                # See SFGBuilder.py to make sure each segment within same function has different segment name.
                 self.segments[seg.name] = seg
             return True
         return False

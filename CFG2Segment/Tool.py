@@ -142,6 +142,13 @@ class BlockCheckSearcher(SegmentSearcher):
         # Get target set and entry set.
         targetSet = GraphTool.traversal(target, getSuccessors, lambda _: False)
         startSet = GraphTool.traversal(start, getSuccessors, lambda x: x == target)
+        
+        # This situation enable some loop nodes.
+        # Cause start -> ... -> target -> ... -> end, cond 0 == len(startSet&ends) make sure v in start -> ... -> target cannot be the v' in target -> ... -> end.
+        # Otherwise a possible path may be start -> ... -> v -> ... -> end without bypassing target.
+        # Under this condition, path start -> ... -> v -> ... -> target -> ... -> v -> ... -> target -> ... -> end can also be separated by the last target.
+        # TODO: After refactor the CFG, each path can end with endpoint, maybe we should remove 0 != len(targetSet&endPoints)?
+        # return 0 != len(targetSet&endPoints) and 0 == len(startSet&ends)
+
         # Return valid targetNode.
-        # return 0 != len(targetSet&endPoints) and 0 == len(targetSet&entrySet-endPoints)
         return 0 != len(targetSet&ends) and 0 == len(startSet&ends) and 0 == len(targetSet&startSet)
