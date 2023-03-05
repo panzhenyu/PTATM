@@ -1,29 +1,25 @@
 import argparse, subprocess, sys, re
-from functools import reduce
-from faulthandler import disable
 from claripy import atexit
 
 """
 Usage: sudo python3 gentrace.py [options] -- <command>
-Collect probe trace for command.
+Generate probe trace for a command, make sure you have the root privilege.
 
-    -p, --probe     probe to instrument, you should provide at least one probe.
+    -p, --probe     probe to instrument(separate by ',' or provide multiple option), you should provide at least one probe.
     -c, --clock     clock the tracer used, default is global, see /sys/kernel/tracing/trace_clock.
     -r, --repeat    generate multiple trace information by repeating each input, default is 1.
 
-[output format]
-    [iter 1]
-        trace information
-    [iter 2]
+[output fmt for each repeat]
+    [command] [clock]
+        tsc,probe_event
         ...
-    ...
 """
 
 # args.
-COMMAND = "/home/pzy/project/PTATM/benchmark/benchmark"
+COMMAND = "/home/pzy/project/PTATM/benchmark/test"
 PROBES = ["main__0=main", "main__1=main+0x212", "main=main%return"]
 CLOCK = "global"
-REPEAT = 1
+REPEAT = 2
 
 # probe vars.
 PGROUP = "ETCG"
@@ -124,4 +120,4 @@ if __name__ == "__main__":
             sys.stderr.write("Failed to collect trace for command " + COMMAND + ".\n" + msg)
             exit(-4)
         else:
-            sys.stdout.write("[iter " + str(i) + "]\n" + msg)
+            sys.stdout.write("[%s] [%s]\n%s" % (COMMAND, CLOCK, msg))

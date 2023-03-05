@@ -1,32 +1,25 @@
 import argparse, angr
-from sys import stdout
 from functools import reduce
 from CFG2Segment.CFGBase import CFG
 from CFG2Segment.CFGRefactor import FunctionalCFGRefactor
-from CFG2Segment.SFGBase import SFG, Segment
+from CFG2Segment.SFGBase import SFG
 from CFG2Segment.SFGBuilder import FunctionalSFGBuilder
-from CFG2Segment.Tool import GraphTool
 
 """
-Usage: python3 dumpseg.py [options] binary
-Dump segment for interested functions of binary file.
+Usage: python3 genprobe.py [options] binary
+Generate segment probe for interested functions of binary file.
 
-    -f, --func      function interested that separated by ',' and ordered by priority, default is main only.
+    -f, --func      interested functions(separated by ',' or provide multiple option), default is main only.
     -s, --max-seg   max segment num, default is 2.
-    -q, --quiet     do not output max_seg and topological list, default is True.
 
 [output format]
-    [Fir.]  binary.
-    [Sec.]  max_seg.
-    [Thi.]  Topological list of interested functions(This infomation doesn't make sense for indirect calls).
-    [Rest]  segment.name=function.name+offset
+    probes separate by ','.
 """
 
 if __name__ == "__main__":
     binary = "/home/pzy/project/PTATM/benchmark/test"
     functions = list(set(["main"]))
     max_seg = 2
-    quiet = True
 
     # Parse binary with angr.
     angr_project = angr.Project(binary, load_options={'auto_load_libs': False})
@@ -42,21 +35,27 @@ if __name__ == "__main__":
     sfg_builder = FunctionalSFGBuilder(max_seg, functions)
     build_result = sfg_builder.build(sfg)
 
-    # Collect calling graph and topological list for functions.
-    # This step may remove some function from original function list(functions), cause some function may not exist or has a default name.
-    graph = dict()
+    # Remove function who doesn't exist in SFG.
     for name in functions:
-        # Some callee may not exist cause plt fuction or other reasons, so do those in functions.
-        cur = sfg.getSegmentFunc(name)
-        # Function doesn't exist or have a default name.
         # TODO: Later if we can create probe with address, we can remove default name restriction.
+        cur = sfg.getSegmentFunc(name)
         if None == cur or cur.function.is_default_name:
             # TODO: Add a warning?
             functions.remove(name)
-            continue
-        callees = [sfg.getSegmentFuncByAddr(addr) for addr in cur.function.callees]
-        graph[name] = [callee.function.name for callee in callees if callee is not None]
-    topoList = GraphTool.topologicalSort(graph, functions)
+
+    # Collect calling graph and topological list for functions.
+    # This step may remove some function from original function list(functions), cause some function may not exist or has a default name.
+    # graph = dict()
+    # for name in functions:
+        # Some callee may not exist cause plt fuction or other reasons, so do those in functions.
+        # cur = sfg.getSegmentFunc(name)
+        # Function doesn't exist or have a default name.
+        # if None == cur or cur.function.is_default_name:
+        #     functions.remove(name)
+        #     continue
+        # callees = [sfg.getSegmentFuncByAddr(addr) for addr in cur.function.callees]
+        # graph[name] = [callee.function.name for callee in callees if callee is not None]
+    # topoList = GraphTool.topologicalSort(graph, functions)
 
     # Collect probes from segment information.
     # Probe format: EVENT=PROBE => segment.name=function.name+offset
@@ -71,9 +70,4 @@ if __name__ == "__main__":
         probes.append(segfunc.name + "=" + segfunc.name + r"%return")
 
     # Output
-    print(binary)
-    if not quiet:
-        print(max_seg)
-        print(reduce(lambda x, y: x + ',' + y, topoList))
-    for probe in probes:
-        print(probe)
+    print(reduce(lambda x, y: x + ',' + y, probes))
