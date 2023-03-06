@@ -60,13 +60,17 @@ class SegmentFunction:
     SEG_NAME_SEP = '__'
 
     def nextSegmentName(self):
-        return self.function.name + SegmentFunction.SEG_NAME_SEP + str(len(self.segments))
+        return SegmentFunction.makeSegmentName(self.function.name, str(len(self.segments)))
+
+    @staticmethod
+    def makeSegmentName(funcname: str, segno: str):
+        return funcname + SegmentFunction.SEG_NAME_SEP + segno
 
     # Return None or [function name, segment no.]
     @staticmethod
     def parseSegmentName(segname: str):
-        sepidx = segname.rfind(Segment.SEG_NAME_SEP)
-        return None if -1 == sepidx else segname[:sepidx],segname[sepidx+len(Segment.SEG_NAME_SEP):]
+        sepidx = segname.rfind(SegmentFunction.SEG_NAME_SEP)
+        return None if -1 == sepidx else segname[:sepidx],segname[sepidx+len(SegmentFunction.SEG_NAME_SEP):]
     
     @staticmethod
     def entrySegment(segno: str):

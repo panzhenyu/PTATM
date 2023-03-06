@@ -1,6 +1,10 @@
 from abc import abstractmethod
 import argparse, json, re, sys
-from CFG2Segment.SFGBase import Segment, SegmentFunction
+from inspect import trace
+from textwrap import indent
+
+from numpy import append
+from CFG2Segment.SFGBase import SegmentFunction
 
 """
 Usage: python3 dumptrace.py command [options] file [file]
@@ -71,7 +75,7 @@ Dump segment info from (raw/json)trace file.
                 }
             } // Dump timing information for all functions.
         } // Basic information of this dump.
-
+    Note that every non-exit func should always appear in nrcallee and dump concurrently.
     whose calling graph may be like this:
         main -> func -> foo
 """
@@ -84,20 +88,20 @@ class Trace:
     KEY_NORMCOST    = "normcost"
     KEY_NRCALLEE    = "nrcallee"
     KEY_FULLCOST    = "fullcost"
+    # Segment related constants.
+    SEGNO_RETURN    = "return"
 
     def __init__(self) -> None:
         self.command = set()
         self.clock = None
         self.dump = dict()
 
-    # Modifier
-    def addFunctionDump(self, fname: str, fdump: dict):
-        if fname not in self.dump:
-            self.dump[fname] = fdump.copy()
-        else:
+    # Modifer.
+    def mergeFuncDump(self, fname: str, fdump: dict):
+        if fname in self.dump:
             cur = self.dump[fname]
             for key, value in fdump.items():
-                if key is Trace.KEY_FULLCOST:
+                if key == Trace.KEY_FULLCOST:
                     # Merge full function execution time.
                     cur.setdefault(key, list()).extend(value)
                 elif key not in cur:
@@ -105,14 +109,21 @@ class Trace:
                     cur[key] = value.copy()
                 else:
                     # Merge segment.
-                    cur_normcost = cur[key].setdefault(Trace.KEY_NORMCOST, list())
+                    cur[key].setdefault(Trace.KEY_NORMCOST, list()).extend(value[Trace.KEY_NORMCOST])
                     cur_nrcallee = cur[key].setdefault(Trace.KEY_NRCALLEE, dict())
-                    # Merge normcost for segment.
-                    cur_normcost.extend(value[Trace.KEY_NORMCOST])
                     # Merge nrcallee for segment.
-                    for calleeName, nrcalleeList in value[Trace.KEY_NRCALLEE]:
+                    for calleeName, nrcalleeList in value[Trace.KEY_NRCALLEE].items():
                         cur_nrcallee.setdefault(calleeName, list()).extend(nrcalleeList)
-        return self
+        else:
+            self.dump[fname] = fdump.copy()
+
+    def mergeTrace(self, rhs) -> bool:
+        if self.clock != rhs.clock:
+            return False
+        self.command |= rhs.command
+        for fname, fdump in rhs.dump.items():
+            self.mergeFuncDump(fname, fdump)
+        return True
 
     # Utils
     def genCallingGraph(self) -> dict[str:list[str]|set[str]]:
@@ -120,7 +131,7 @@ class Trace:
         for fname, fdump in self.dump.items():
             graph[fname] = set()
             for key, value in fdump.items():
-                if key is not Trace.KEY_FULLCOST:
+                if key != Trace.KEY_FULLCOST:
                     graph[fname] |= set(value[Trace.KEY_NRCALLEE].keys())
         return graph
 
@@ -142,60 +153,82 @@ class JsonTraceBuilder(TraceBuilder):
         # TODO: Maybe we should check format for trace.dump?
         return trace
 
-"""
-    1,main__0
-    2,main__1
-    3,func__0
-    4,foo__0
-    5,foo__return
-    6,func__1
-    7,func__return
-    8,main__2
-    9,main__return
+class TimeTraceBuilder(TraceBuilder):
+    def __init__(self, command: str, clock: str) -> None:
+        self.command = command
+        self.clock = clock
 
-    collect function: cur_time, cur_func, cur_segno
-        last_appear[cur_segno] = cur_time
-        parse next trace -> next_time, next_func, next_segno (None, None, None if this is no trace anymore.)
-        while (have trace) and (func doesn't return) and (program doesn't exit); do
-            if next_segno is not function entry segno:
-                last_appear[next_segno] = next_time
-                parse next trace -> next_time, next_func, next_segno
-            else:
-                
-        done
-    done
-"""
-class RawTraceBuilder(TraceBuilder):
     # Each item in timetraces is a time trace such as '1,main__0'.
-    def appendRawTrace(self, traceObject: Trace, command: str, clock: str, timetraces: list[str]) -> bool:
-        if traceObject.clock is not None and traceObject.clock != clock:
-            sys.stderr.write("Clock mismatch, old is %s while new is %s.\n" % (traceObject.clock, clock))
-            return False
-
-        # Segment stack, the item format is (funcname, segno).
-        segstack = list()
+    def buildFrom(self, target: list[str]) -> Trace | None:
+        # Init trace object.
+        traceObject = Trace()
+        traceObject.command.add(self.command)
+        traceObject.clock = self.clock
+        # Segment stack contains items whose format is (time, funcname, segno, and callstack contains items of func entry and func return, 
+        # whose format is as same as segment stack.
+        segstack, callstack = list(), list()
         try:
-            for time, segname in [trace.split(',') for trace in timetraces]:
+            timetraces = [trace.split(',') for trace in target]
+            for time, segname in timetraces:
                 funcname, segno = SegmentFunction.parseSegmentName(segname)
+                # print(time, segname, funcname, segno, SegmentFunction.entrySegment(segno), segno == Trace.SEGNO_RETURN)
+                # print(segstack)
+                # print(callstack)
+                last_time, last_funcname, last_segno = segstack[-1] if len(segstack) != 0 else (None, None, None)
+                last_segname = SegmentFunction.makeSegmentName(last_funcname, last_segno) if last_funcname != None else None
+
+                # A piece of last segment has been executed, add time cost to it.
+                if last_segname != None:
+                    traceObject.dump.setdefault(last_funcname, dict()).setdefault(last_segname, dict())     \
+                        .setdefault(Trace.KEY_NORMCOST, [0])[0] += float(time) - float(last_time)
+
                 if SegmentFunction.entrySegment(segno):
-                    pass
-                    # segstack.append(funcname)
-                elif segno == "return":
-                    pass
-                    # segstack.pop()
+                    # Entry segment meas a function call.
+                    segstack.append([time, funcname, segno])
+                    callstack.append((time, funcname))
+                    if last_segname != None:
+                        traceObject.dump.setdefault(last_funcname, dict()).setdefault(last_segname, dict()) \
+                            .setdefault(Trace.KEY_NRCALLEE, dict()).setdefault(funcname, [0])[0] += 1
                 else:
-                    # Unknown segment.
-                    sys.stderr.write("Unknown segment %s with segno %s.\n" % (segname, segno))
-                    return False
-                
+                    if last_funcname != funcname:
+                        sys.stderr.write("last_funcname(%s) != funcname(%s)\n" % (last_funcname, funcname))
+                        return None
+                    # Current segment isn't an entry segment, so the last segment has done, pop it.
+                    segstack.pop()
+                    if segno == Trace.SEGNO_RETURN:
+                        # Return to the segment before last segment(such as a__0[before last seg] -> b__0[last seg] -> b__return[cur seg]).
+                        # We should upate time for the segment before last segment.
+                        if len(segstack) != 0:
+                            segstack[-1][0] = time
+                        # Update callstack and calculate fulltime for function.
+                        if 0 == len(callstack) or callstack[-1][1] != funcname:
+                            sys.stderr.write("0 == len(callstack) or callstack[-1][1] != funcname, len(callstack)=%d\n" % (len(callstack)))
+                            return None
+                        traceObject.dump.setdefault(funcname, dict())   \
+                            .setdefault(Trace.KEY_FULLCOST, list()).append(float(time) - float(callstack[-1][0]))
+                        callstack.pop()
+                    else:
+                        segstack.append([time, funcname, segno])
+            # len(segstack) != 0 means the program abort or exit directly, but all time info of segment has been collected.
+            # For function doesn't return, then the full cost is (time,funcname_0 -> last time trace)
+            while len(callstack) != 0:
+                time, funcname = callstack.pop()
+                traceObject.dump.setdefault(funcname, dict())   \
+                    .setdefault(Trace.KEY_FULLCOST, list()).append(float(timetraces[-1][0]) - float(time))
+            # Repair format for traceObject.dump.
+            for fdump in traceObject.dump.values():
+                fdump.setdefault(Trace.KEY_FULLCOST, list())
+                for segname, segdump in fdump.items():
+                    if segname != Trace.KEY_FULLCOST:
+                        segdump.setdefault(Trace.KEY_NORMCOST, list())
+                        segdump.setdefault(Trace.KEY_NRCALLEE, dict())
         except Exception as e:
             sys.stderr.write(e)
             sys.stderr.write("Parse time trace failed.\n")
-            return False
+            return None
+        return traceObject
 
-        traceObject.command.add(command)
-        return True
-
+class RawTraceBuilder(TraceBuilder):
     def buildFrom(self, target: str) -> Trace|None:
         traceObject = Trace()
         headline_info, headline_pattern = list(), r"\[(.*?)\] \[(.*?)\]"
@@ -204,38 +237,23 @@ class RawTraceBuilder(TraceBuilder):
         # Catch head line informathon.
         for idx, trace in enumerate(rawtraces):
             matchresult = re.match(headline_pattern, trace)
-            if matchresult is not None:
+            if matchresult != None:
                 # headline info: (index, (command, clock))
                 headline_info.append((idx, matchresult.groups()))
 
         # Catch rawtrace group and append it into traceObject.
         for i in range(len(headline_info)):
             begin, (command, clock) = headline_info[i][0] + 1, headline_info[i][1]
+            if i == 0:
+                # Init clock for later merge.
+                traceObject.clock = clock
             if begin != len(rawtraces):
                 timetraces = rawtraces[begin:] if i == len(headline_info) - 1 else rawtraces[begin: headline_info[i+1][0]]
-                if not self.appendRawTrace(traceObject, command, clock, timetraces):
+                obj = TimeTraceBuilder(command, clock).buildFrom(timetraces)
+                if obj is None or not traceObject.mergeTrace(obj):
+                    # TODO: Return or not return None if parse failed?
                     sys.stderr.write("Append raw trace failed.\n")
-                    return None
-
-        return trace
-
-class MultiTraceBuilder(TraceBuilder):
-    def buildFrom(self, target: list[Trace]) -> Trace|None:
-        pass
-
-class TraceMerger:
-    @staticmethod
-    def mergeDump(chs_dump: dict, rhs_dump: dict):
-        pass
-        # for func, fdump in rhs_dump.items():
-        #     if func not in chs_dump.dump:
-        #         chs_dump.addFunctionDump(fdump)
-        #     else:
-        #         chs_dump.dump[func] = Trace.mergeFucntionDump()   
-
-    @staticmethod
-    def mergeTrace(chs_trace: Trace, rhs_trace: Trace) -> Trace:
-        pass
+        return traceObject
 
 class TraceSerializer:
     @abstractmethod
@@ -244,11 +262,50 @@ class TraceSerializer:
 
 class JsonTraceSerializer(TraceSerializer):
     def serialize(self, target: Trace) -> str:
-        pass
+        output = dict()
+        output[Trace.KEY_COMMAND] = list(target.command)
+        output[Trace.KEY_CLOCK] = target.clock
+        output[Trace.KEY_DUMP] = target.dump
+        return json.dumps(output, indent=4)
 
 if __name__ == "__main__":
     mode = "parse"
     files = []
     output = None
 
+    if mode == "parse":
+        pass
+    elif mode == "merge":
+        pass
+    elif mode == "graph":
+        pass
+    else:
+        sys.stderr.write("unrecognized mode %s\n" % mode)
+        exit(-1)
 
+    rawTrace = \
+    """
+    [command] [clock]
+        1,main__0
+        2,main__1
+        3,func__0
+        4,foo__0
+        5,foo__return
+        6,func__1
+        7,func__return
+        8,main__2
+        9,main__return
+    [command] [clock]
+        1,main__0
+        2,main__1
+        3,func__0
+        4,foo__0
+        5,foo__return
+    [command] [clock]
+    """
+
+    traceObj = RawTraceBuilder().buildFrom(rawTrace)
+    if traceObj is None:
+        sys.stderr.write("Build raw trace failed.\n")
+    else:
+        print(JsonTraceSerializer().serialize(traceObj))
