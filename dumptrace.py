@@ -36,24 +36,38 @@ Dump segment info from (raw/json)trace file.
             "dump": {
                 "main": {
                     // probe: time list
-                    "main__0": [1], (main__1 - main__0)
-                    "main__1": [2], (func__0 - main__1 + main__2 - func__return)
-                    "main__2": [1], (main__return - main__2)
-                    "callees": {
-                        // function, calling num list.
-                        "func": [1]
-                    }
+                    "main__0": {
+                        "normcost": [1], (main__1 - main__0)
+                        "nrcallee": {}
+                    }, 
+                    "main__1": {
+                        "normcost": [2], (func__0 - main__1 + main__2 - func__return)
+                        "nrcallee": { "func": [1] }
+                    }, 
+                    "main__2": {
+                        "normcost": [1], (main__return - main__2)
+                        "nrcallee": {}
+                    },
+                    "fullcost": [8], (main__return - main__0)
+
                 }, // Time detail of one function.
                 "func": {
-                    "func__0": [2], (foo__0 - func__1 + func__1 - foo__return)
-                    "func__1": [1], (func__return - func__1)
-                    "callees": {
-                        "foo": [1]
-                    }
+                    "func__0": {
+                        "normcost": [2], (foo__0 - func__0 + func__1 - foo__return)
+                        "nrcallee": { "foo": [1] }
+                    }, 
+                    "func__1": {
+                        "normcost": [1], (func__return - func__1)
+                        "nrcallee": {}
+                    }, 
+                    "funcost": [4], (func__return - func__0)
                 },
                 "foo": {
-                    "foo__0": [1] (foo__return - foo__0)
-                    "callees": {}
+                    "foo__0": {
+                        "normcost": [1] (foo__return - foo__0)
+                        "nrcallee": {}
+                    }, 
+                    "funcost": [1], (foo__return - foo__0)
                 }
             } // Dump timing information for all functions.
         } // Basic information of this dump.
@@ -64,10 +78,12 @@ Dump segment info from (raw/json)trace file.
 
 class Trace:
     # Global constants.
-    KEY_COMMAND = "command"
-    KEY_CLOCK   = "clock"
-    KEY_DUMP    = "dump"
-    KEY_CALLEES = "callees"
+    KEY_COMMAND     = "command"
+    KEY_CLOCK       = "clock"
+    KEY_DUMP        = "dump"
+    KEY_NORMCOST    = "normcost"
+    KEY_NRCALLEE    = "nrcallee"
+    KEY_FULLCOST    = "fullcost"
 
     def __init__(self) -> None:
         self.command = set()
@@ -81,22 +97,31 @@ class Trace:
         else:
             cur = self.dump[fname]
             for key, value in fdump.items():
-                if key is Trace.KEY_CALLEES:
-                    # Meger fdump['callees'] into current function.
-                    curcallees = cur[key]
-                    for func, callingNumList in value.items():
-                        # Do merge for each callee.
-                        curcallees.setdefault(func, list()).extend(callingNumList)
-                else:
-                    # Merge segment execution time into current function.
+                if key is Trace.KEY_FULLCOST:
+                    # Merge full function execution time.
                     cur.setdefault(key, list()).extend(value)
+                elif key not in cur:
+                    # Add a new segment.
+                    cur[key] = value.copy()
+                else:
+                    # Merge segment.
+                    cur_normcost = cur[key].setdefault(Trace.KEY_NORMCOST, list())
+                    cur_nrcallee = cur[key].setdefault(Trace.KEY_NRCALLEE, dict())
+                    # Merge normcost for segment.
+                    cur_normcost.extend(value[Trace.KEY_NORMCOST])
+                    # Merge nrcallee for segment.
+                    for calleeName, nrcalleeList in value[Trace.KEY_NRCALLEE]:
+                        cur_nrcallee.setdefault(calleeName, list()).extend(nrcalleeList)
         return self
 
     # Utils
     def genCallingGraph(self) -> dict[str:list[str]|set[str]]:
         graph = dict()
         for fname, fdump in self.dump.items():
-            graph[fname] = set(fdump[Trace.KEY_CALLEES]) if Trace.KEY_CALLEES in fdump else set()
+            graph[fname] = set()
+            for key, value in fdump.items():
+                if key is not Trace.KEY_FULLCOST:
+                    graph[fname] |= set(value[Trace.KEY_NRCALLEE].keys())
         return graph
 
 class TraceBuilder:
@@ -114,7 +139,9 @@ class JsonTraceBuilder(TraceBuilder):
         trace.command = set(jsonobj[Trace.KEY_COMMAND])
         trace.clock = jsonobj[Trace.KEY_CLOCK]
         trace.dump = jsonobj[Trace.KEY_DUMP].copy()
+        # TODO: Maybe we should check format for trace.dump?
         return trace
+
 """
     1,main__0
     2,main__1
@@ -137,8 +164,6 @@ class JsonTraceBuilder(TraceBuilder):
                 
         done
     done
-
-
 """
 class RawTraceBuilder(TraceBuilder):
     # Each item in timetraces is a time trace such as '1,main__0'.
