@@ -17,8 +17,8 @@ Generate segment probe for interested functions of binary file.
 """
 
 if __name__ == "__main__":
-    binary = "/home/pzy/project/PTATM/benchmark/test"
-    functions = list(set(["main"]))
+    binary = "/home/pzy/project/PTATM/benchmark/benchmark"
+    functions = list(set(["main", "indirectCall", "foo", "fib", "indirectJump", "directCall"]))
     max_seg = 2
 
     # Parse binary with angr.

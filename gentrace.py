@@ -9,16 +9,33 @@ Generate probe trace for a command, make sure you have the root privilege.
     -c, --clock     clock the tracer used, default is global, see /sys/kernel/tracing/trace_clock.
     -r, --repeat    generate multiple trace information by repeating each input, default is 1.
 
-[output fmt for each repeat]
+[output format]
     [command] [clock]
         tsc,probe_event
         ...
+    [command] [clock]
+        ...
+    ...
 """
 
 # args.
-COMMAND = "/home/pzy/project/PTATM/benchmark/test"
-PROBES = ["main__0=main", "main__1=main+0x212", "main=main%return"]
-CLOCK = "global"
+COMMAND = "/home/pzy/project/PTATM/benchmark/benchmark"
+PROBES = [
+    "fib__0=fib",
+    "fib=fib%return",
+    "main__0=main",
+    "main__1=main+0x66",
+    "main=main%return",
+    "indirectJump__0=indirectJump",
+    "indirectJump=indirectJump%return",
+    "foo__0=foo",
+    "foo=foo%return",
+    "indirectCall__0=indirectCall",
+    "indirectCall=indirectCall%return",
+    "directCall__0=directCall",
+    "directCall=directCall%return"
+]
+CLOCK = "x86-tsc"
 REPEAT = 2
 
 # probe vars.
