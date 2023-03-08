@@ -7,9 +7,9 @@ Usage: python3 dumptrace.py command [options] file [file]
 Dump segment info from (raw/json)trace file.
 
 [command]
-    parse           parse raw traces into one json trace.
-    merge           merge json traces into one json trace.
-    graph           generate calling graph for a json trace.
+    parse       parse raw traces into one json trace.
+    merge       merge json traces into one json trace.
+    strip       strip field for json trace.
 
 [options]
     -o, --output    output file, default is stdout.
@@ -30,49 +30,66 @@ Dump segment info from (raw/json)trace file.
             8,main__2
             9,main__return
 
-    then we output json trace:
+    then we output time trace(note that every non-exit func should always appear in nrcallee and dump concurrently):
         {
             "command": ["command"]
-            "clock": "clock"
+            "clock": "clock",
             "dump": {
                 "main": {
                     // probe: time list
                     "main__0": {
-                        "normcost": [1], (main__1 - main__0)
+                        "normcost": {
+                            "time": [1] (main__1 - main__0)
+                        }, 
                         "nrcallee": {}
                     }, 
                     "main__1": {
-                        "normcost": [2], (func__0 - main__1 + main__2 - func__return)
+                        "normcost": {
+                            "time": [2] (func__0 - main__1 + main__2 - func__return)
+                        }, 
                         "nrcallee": { "func": [1] }
                     }, 
                     "main__2": {
-                        "normcost": [1], (main__return - main__2)
+                        "normcost": {
+                            "time": [1] (main__return - main__2)
+                        }, 
                         "nrcallee": {}
                     },
-                    "fullcost": [8], (main__return - main__0)
-
+                    "fullcost": {
+                        "time": [8], (main__return - main__0)
+                    }
                 }, // Time detail of one function.
                 "func": {
                     "func__0": {
-                        "normcost": [2], (foo__0 - func__0 + func__1 - foo__return)
+                        "normcost": {
+                            "time": [2] (foo__0 - func__0 + func__1 - foo__return)
+                        },
                         "nrcallee": { "foo": [1] }
                     }, 
                     "func__1": {
-                        "normcost": [1], (func__return - func__1)
+                        "normcost": {
+                            "time": [1] (func__return - func__1)
+                        }, 
                         "nrcallee": {}
                     }, 
-                    "funcost": [4], (func__return - func__0)
+                    "funcost": {
+                        "time": [4] (func__return - func__0)
+                    }
                 },
                 "foo": {
                     "foo__0": {
-                        "normcost": [1] (foo__return - foo__0)
+                        "normcost":  {
+                            "time": [1] (foo__return - foo__0)
+                        }
                         "nrcallee": {}
                     }, 
-                    "funcost": [1], (foo__return - foo__0)
+                    "funcost":  {
+                        "time": [1] (foo__return - foo__0)
+                    }
                 }
             } // Dump timing information for all functions.
         } // Basic information of this dump.
-    Note that every non-exit func should always appear in nrcallee and dump concurrently.
+
     whose calling graph may be like this:
         main -> func -> foo
 """
@@ -146,9 +163,14 @@ if __name__ == "__main__":
         1631827068139540,indirectCall__return
         1631827068145970,main__return
     """
-
-    traceObj = RawTraceBuilder().buildFrom(rawTrace)
-    if traceObj is None:
-        sys.stderr.write("Build raw trace failed.\n")
+    traceObj = Trace()
+    filler = RawTraceStringFiller(traceObj)
+    if filler.fill(rawTrace) == False:
+        sys.stderr.write("Build raw trace failed.\n%s" % filler.err_msg)
     else:
-        print(JsonTraceSerializer().serialize(traceObj))
+        print(JsonTraceSerializer(4).serialize(traceObj))
+        print(filler.err_msg)
+        # CostTimeStripper(traceObj).strip()
+        # print(JsonTraceSerializer().serialize(traceObj))
+        # CalleeMaximizeStripper(traceObj).strip()
+        # print(JsonTraceSerializer().serialize(traceObj))

@@ -1,9 +1,24 @@
+from functools import reduce
 import matplotlib.pyplot as plt
 import statsmodels.tsa.stattools as stattools
 from abc import abstractmethod
 from scipy.stats import gumbel_r, genpareto, cramervonmises
 
-class EVT:
+class ExtremeDistribution:
+    @abstractmethod
+    # Return a value with exceedance probability(exceed_prob).
+    def isf(self, exceed_prob: float) -> float:
+        pass
+
+    @abstractmethod
+    def to_string(self) -> str:
+        pass
+
+    # Plot sf, where sf = 1 - cdf.
+    def plot_sf(self):
+        pass
+
+class EVT(ExtremeDistribution):
     def __init__(self, evt_class) -> None:
         self.evt_class = evt_class
         # A list saves raw samples.
@@ -33,14 +48,11 @@ class EVT:
         return self
 
     # Util.
-
-    # Return a pwcet with exceedance probability(exceed_prob).
-    def pwcet(self, exceed_prob: float) -> float:
+    def isf(self, exceed_prob: float) -> float:
         return self.evt_func.isf(exceed_prob)
 
-    # Plot sf, where sf = 1 - cdf.
-    def plot_sf(self):
-        pass
+    def to_string(self) -> str:
+        return str(self.evt_class) + ":" + str(self.evt_func.kwds)
 
     # Stationarity test for raw data.
     def kpss(self):
@@ -78,9 +90,12 @@ class GEV(EVT):
         return ext_vals
 
     def fit(self) -> bool:
-        # pick raw samples until we pass kpss,bds,lrd test -> pick extreme value & EVT fit until we pass cvm test.
+        # Pick raw samples until we pass kpss,bds,lrd test -> pick extreme value & EVT fit until we pass cvm test.
         if len(self.raw_data) < GEV.MIN_NRSAMPLE:
-            self.err_msg = "Too few samples[%d] to fit." % len(self.raw_data)
+            self.err_msg = "Too few samples[%d] to fit.\n" % len(self.raw_data)
+            return False
+        if max(self.raw_data) <= 0:
+            self.err_msg = "Max(self.raw_data)[%f]<=0.\n" % max(self.raw_data)
             return False
 
         # Use BM to filter ext_data.
@@ -111,9 +126,12 @@ class GPD(EVT):
         return data[-nr_ext:]
 
     def fit(self) -> bool:
-        # pick raw samples until we pass kpss,bds,lrd test -> pick extreme value & EVT fit until we pass cvm test.
+        # Pick raw samples until we pass kpss,bds,lrd test -> pick extreme value & EVT fit until we pass cvm test.
         if len(self.raw_data) < GPD.MIN_NRSAMPLE:
-            self.err_msg = "Too few samples[%d] to fit." % len(self.raw_data)
+            self.err_msg = "Too few samples[%d] to fit.\n" % len(self.raw_data)
+            return False
+        if max(self.raw_data) <= 0:
+            self.err_msg = "Max(self.raw_data)[%f]<=0.\n" % max(self.raw_data)
             return False
 
         # Use POT to filter ext_data.
@@ -132,37 +150,65 @@ class Gumbel(GEV):
     def __init__(self) -> None:
         super().__init__(gumbel_r)
 
+    def to_string(self) -> str:
+        kwds = self.evt_func.kwds
+        return "Gumbel(loc=%s,scale=%s)" % (str(round(kwds["loc"], 4)), str(round(kwds["scale"], 4)))
+
 class Pareto(GPD):
     def __init__(self) -> None:
         super().__init__(genpareto)
 
-class LinearCombinedEVT:
+    def to_string(self) -> str:
+        kwds = self.evt_func.kwds
+        return "Pareto(c=%s, loc=%s,scale=%s)" % (str(round(kwds["c"], 4)), str(round(kwds["loc"], 4)), str(round(kwds["scale"], 4)))
+
+class LinearCombinedEVT(ExtremeDistribution):
     def __init__(self) -> None:
-        # A dict maps evt function to it's weight.
-        self.weighted_evtfunc = dict()
+        # A dict maps evt object to it's weight.
+        self.weighted_evtobject = dict()
 
-    def addSubDistribution(self, evt_func, weight: int = 1):
-        self.weighted_evtfunc.setdefault(evt_func, 0)
-        self.weighted_evtfunc[evt_func] += weight
-
-    # Plot sf, where sf = 1 - cdf.
-    def plot_sf(self):
-        pass
-
-    # Return a pwcet with exceedance probability(exceed_prob).
     @abstractmethod
-    def pwcet(self, exceed_prob: float) -> float:
+    def add(self, evt_object: EVT, weight: int) -> bool:
         pass
 
+    def to_string(self) -> str:
+        jointfunc = lambda k1, k2: str(self.weighted_evtobject[k1]) + '*' + k1.to_string() + ' + ' + str(self.weighted_evtobject[k2]) + '*' + k2.to_string()
+        return reduce(jointfunc, self.weighted_evtobject)
 
 class PositiveLinearGumbel(LinearCombinedEVT):
-    @abstractmethod
-    # Return a pwcet with exceedance probability(exceed_prob).
-    def pwcet(self, exceed_prob: float) -> float:
-        pass
+    def __init__(self) -> None:
+        super().__init__()
+
+    def add(self, evt_object: Gumbel, weight: int = 1) -> bool:
+        if not isinstance(evt_object, Gumbel) or weight < 0:
+            return False
+        if weight > 0:
+            self.weighted_evtobject.setdefault(evt_object, 0)
+            self.weighted_evtobject[evt_object] += weight
+        return True
+
+    # Return a value with exceedance probability(exceed_prob).
+    def isf(self, exceed_prob: float) -> float:
+        ans = 0.0
+        for evt_object, weight in self.weighted_evtobject.items():
+            ans += weight * evt_object.isf(exceed_prob)
+        return ans
 
 class PositiveLinearPareto(LinearCombinedEVT):
-    @abstractmethod
-    # Return a pwcet with exceedance probability(exceed_prob).
-    def pwcet(self, exceed_prob: float) -> float:
-        pass
+    def __init__(self) -> None:
+        super().__init__()
+
+    def add(self, evt_object: Pareto, weight: int = 1) -> bool:
+        if not isinstance(evt_object, Pareto) or weight < 0:
+            return False
+        if weight > 0:
+            self.weighted_evtobject.setdefault(evt_object, 0)
+            self.weighted_evtobject[evt_object] += weight
+        return True
+        
+    # Return a value with exceedance probability(exceed_prob).
+    def isf(self, exceed_prob: float) -> float:
+        ans = 0.0
+        for evt_object, weight in self.weighted_evtobject.items():
+            ans += weight * evt_object.isf(exceed_prob)
+        return ans

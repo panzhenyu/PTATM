@@ -1,50 +1,75 @@
-import EVTTool, argparse
+from ftplib import parse227
+import TraceTool, EVTTool, PWCETSolver, argparse, json
 
 """
-Usage: python3 genpwcet.py command [options] file
-Generate pwcet estimate/curve for target functions.
+Usage: python3 genpwcet.py command [options] trace
+Generate pwcet estimate/curve for target functions. This tools will set 
+symbolic timing analysis field(such as gumbel, pareto) into trace file.
 
 [command]
     image           generate pwcet curve for each function.
     value           generate pwcet estimate for each function.
-    symbol          generate symbolic trace file with each segment represented by GEV/GPD parameters.
 
 [options]
-    -o, --output    Output file to save result, default value: ${file}_pwcet.png for image mode and stdout for value mode.
     -f, --func      Target functions to generate pwcet, splited by ',' and default is main.
-    -p, --prob      Exceedance probability, ignored in image mode, default is 1e-6.
     -t, --type      Choost type of EVT family(GEV or GPD), default is GPD.
+    -r, --rebuild   Force to rebuild symbolic field from time field even if it's already exist.
+    -s, --precision Set precision for output, default is 4.
+    -o, --output    Output file to save result, default value: ${file}_pwcet.png for image mode and stdout for value mode.
+    -p, --prob      Exceedance probability, ignored in image mode, default is 1e-6.
 
-[symbolic trace]
-    The format of symbolic trace is almost as same as json trace(See TraceTool.JsonTraceSerializer or dumptrace.py):
-        {
-            "evt": "GPD",
-            "func": {
-                "main": {
-                    // probe: time list
-                    "main__0": {
-                        "normcost": [1], (main__1 - main__0)
-                        "nrcallee": {}
-                    }
+    We generate symbolic trace with EVT tools like this:
+    {
+        "command": ["command"], 
+        "clock": "clock", 
+        "dump": {
+            "main": {
+                "main__0": {
+                    "normcost": {
+                        "time": [1], (main__1 - main__0)
+                        "pareto": dict of pareto args, 
+                        ...
+                    }, 
+                    "nrcallee": {}
+                },
+                ...
+                "fullcost": {
+                    "time": [8], (main__return - main__0),
+                    "pareto": dict of pareto args, 
+                    ...
                 }
-            }
+            }, 
+            ...
         }
+    }
 """
 
 if __name__ == "__main__":
-    raw_data = [
-        61256933, 48096137, 47910470, 47691860, 47643836, 47370786, 47340414, 46983683, 46944760, 46899394, 46840381, 46828462, 46791887, 46678365, 46547132, 
-        46531022, 46522973, 46517247, 46483128, 46453277, 46388158, 46370840, 46336187, 46220102, 46164678, 46153326, 46082580, 45975691, 45973001, 45970835, 
-        45956649, 45887595, 45878599, 45868731, 45861109, 45784097, 45780270, 45744384, 45731700, 45697291, 45600591, 45595585, 45482988, 45474591, 45468955, 
-        45468185, 45467253, 45446415, 45437051, 45436279, 45434349, 45423080, 45358307, 45273643, 45176924, 45176222, 45175596, 45157890, 45124597, 45121179, 
-        45083091, 45061450, 45058042, 45041096, 45037095, 45025436, 45005427, 44996894, 44990941, 44982783, 44965970, 44963873, 44953902, 44947947, 44945259, 
-        44943638, 44927849, 44926476, 44922766, 44918370, 44915151, 44904194, 44892244, 44868627, 44866067, 44864837, 44861809, 44861210, 44857971, 44856021, 
-        44851393, 44847057, 44841344, 44840585, 44838506, 44836983, 44836307, 44835418, 44834696, 44832856
-    ]
+    tracestr = '{"command": ["/home/pzy/project/PTATM/benchmark/benchmark"], "clock": "x86-tsc", "dump": {"main": {"main__0": {"normcost": {"time": [210538.0, 165132.0]}, "nrcallee": {"indirectCall": [1, 1], "fib": [1, 1], "directCall": [1, 1]}}, "main__1": {"normcost": {"time": [49174.0, 37884.0]}, "nrcallee": {"indirectJump": [2, 2], "fib": [1, 1], "indirectCall": [1, 1]}}, "fullcost": {"time": [504998.0, 392800.0]}}, "indirectCall": {"indirectCall__0": {"normcost": {"time": [53124.0, 41882.0]}, "nrcallee": {"foo": [2, 2]}}, "fullcost": {"time": [65072.0, 42436.0, 51674.0, 31884.0]}}, "foo": {"foo__0": {"normcost": {"time": [54384.0, 41676.0]}, "nrcallee": {}}, "fullcost": {"time": [36942.0, 17442.0, 28612.0, 13064.0]}}, "fib": {"fib__0": {"normcost": {"time": [85246.0, 64582.0]}, "nrcallee": {"fib": [2, 2]}}, "fullcost": {"time": [17618.0, 17044.0, 68174.0, 17072.0, 13476.0, 12808.0, 51640.0, 12942.0]}}, "directCall": {"directCall__0": {"normcost": {"time": [17466.0, 14398.0]}, "nrcallee": {}}, "fullcost": {"time": [17466.0, 14398.0]}}, "indirectJump": {"indirectJump__0": {"normcost": {"time": [35066.0, 27246.0]}, "nrcallee": {}}, "fullcost": {"time": [17850.0, 17216.0, 14304.0, 12942.0]}}}}'
+    traceObj = TraceTool.Trace()
+    TraceTool.JsonTraceFiller(traceObj).fill(tracestr)
+    # traceObj = TraceTool.Trace()
+    # traceObj.command.add("/home/pzy/project/PTATM/benchmark/benchmark")
+    # traceObj.clock = "x86-tsc"
+    # traceObj.dump = {"main": {"main__0": {"normcost": {"time": [210538.0, 165132.0]}, "nrcallee": {"indirectCall": [1, 1], "fib": [1, 1], "directCall": [1, 1]}}, "main__1": {"normcost": {"time": [49174.0, 37884.0]}, "nrcallee": {"indirectJump": [2, 2], "fib": [1, 1], "indirectCall": [1, 1]}}, "fullcost": {"time": [504998.0, 392800.0]}}, "indirectCall": {"indirectCall__0": {"normcost": {"time": [53124.0, 41882.0]}, "nrcallee": {"foo": [2, 2]}}, "fullcost": {"time": [65072.0, 42436.0, 51674.0, 31884.0]}}, "foo": {"foo__0": {"normcost": {"time": [54384.0, 41676.0]}, "nrcallee": {}}, "fullcost": {"time": [36942.0, 17442.0, 28612.0, 13064.0]}}, "fib": {"fib__0": {"normcost": {"time": [85246.0, 64582.0]}, "nrcallee": {"fib": [2, 2]}}, "fullcost": {"time": [17618.0, 17044.0, 68174.0, 17072.0, 13476.0, 12808.0, 51640.0, 12942.0]}}, "directCall": {"directCall__0": {"normcost": {"time": [17466.0, 14398.0]}, "nrcallee": {}}, "fullcost": {"time": [17466.0, 14398.0]}}, "indirectJump": {"indirectJump__0": {"normcost": {"time": [35066.0, 27246.0]}, "nrcallee": {}}, "fullcost": {"time": [17850.0, 17216.0, 14304.0, 12942.0]}}}
     
-    func = EVTTool.Pareto()
-    if not func.set_rawdata(raw_data).fit():
-        print(func.err_msg)
-    else:
-        print(func.evt_func.kwds)
-        print(func.cvm())
+    # solver = PWCETSolver.ParetoSegmentListSolver()
+    # if False == solver.solve(traceObj):
+    #     print(solver.err_msg)
+    # else:
+    #     print("solve done.")
+    #     TraceTool.CostTimeStripper(traceObj).strip()
+    #     print(TraceTool.JsonTraceSerializer().serialize(traceObj))
+
+
+    plp = EVTTool.PositiveLinearPareto()
+    pareto1 = EVTTool.Pareto()
+    pareto1.set_rawdata([1,2,3]).fit()
+    pareto2 = EVTTool.Pareto()
+    pareto2.set_rawdata([1,2,2223]).fit()
+    plp.add(pareto1)
+    plp.add(pareto2, 2)
+    print(pareto1.to_string())
+    print(pareto2.to_string())
+    print(plp.to_string())
+    print(plp.isf(0.01))

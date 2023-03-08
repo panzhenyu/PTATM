@@ -1,53 +1,72 @@
-import json, sys, re
+import json, re
 from abc import abstractmethod
 from CFG2Segment.SFGBase import SegmentFunction
 
+# We define a trace format here.
+# Note that 'time' in cost field is forced to be exist, 
+# cause pareto & gumbel can only be set but appended.
+"""
+    {
+        "command": ["command"]
+        "clock": "clock",
+        "dump": {
+            "func0": {
+                "segment__0": {
+                        "normcost": {
+                            "time": [1],
+                            "pareto": {"c": 0, "loc": 0, "scale": 1},
+                            "gumbel": {"loc": 0, "scale": 1}
+                        }, 
+                        "nrcallee": {
+                            "callee": [1, 2],
+                            other callee...
+                        }
+                    }, 
+                }, 
+                other segment...,
+                "fullcost": {
+                    "time": [8],
+                    "pareto": {"c": 0, "loc": 0, "scale": 1},
+                    "gumbel": {"loc": 0, "scale": 1}
+                }
+            },
+            other function...
+        }
+    }
+"""
 class Trace:
-    # Global constants.
+    # Json trace constants.
     KEY_COMMAND     = "command"
     KEY_CLOCK       = "clock"
     KEY_DUMP        = "dump"
     KEY_NORMCOST    = "normcost"
     KEY_NRCALLEE    = "nrcallee"
     KEY_FULLCOST    = "fullcost"
-    # Segment related constants.
-    SEGNO_RETURN    = "return"
+
+    # Cost field constants.
+    COST_TIME       = "time"
 
     def __init__(self) -> None:
         self.command = set()
         self.clock = None
         self.dump = dict()
 
-    # Modifer.
-    def mergeFuncDump(self, fname: str, fdump: dict):
-        if fname in self.dump:
-            cur = self.dump[fname]
-            for key, value in fdump.items():
-                if key == Trace.KEY_FULLCOST:
-                    # Merge full function execution time.
-                    cur.setdefault(key, list()).extend(value)
-                elif key not in cur:
-                    # Add a new segment.
-                    cur[key] = value.copy()
-                else:
-                    # Merge segment.
-                    cur[key].setdefault(Trace.KEY_NORMCOST, list()).extend(value[Trace.KEY_NORMCOST])
-                    cur_nrcallee = cur[key].setdefault(Trace.KEY_NRCALLEE, dict())
-                    # Merge nrcallee for segment.
-                    for calleeName, nrcalleeList in value[Trace.KEY_NRCALLEE].items():
-                        cur_nrcallee.setdefault(calleeName, list()).extend(nrcalleeList)
-        else:
-            self.dump[fname] = fdump.copy()
+    # Accessor, note that these accessors may modify dump if target function/segment is not exist.
+    def getFunction(self, funcname: str) -> dict:
+        return self.dump.setdefault(funcname, dict())
+    
+    def getFunctionFullcost(self, funcname: str) -> dict:
+        return self.getFunction(funcname).setdefault(Trace.KEY_FULLCOST, dict())
 
-    def mergeTrace(self, rhs) -> bool:
-        if self.clock != rhs.clock:
-            return False
-        self.command |= rhs.command
-        for fname, fdump in rhs.dump.items():
-            self.mergeFuncDump(fname, fdump)
-        return True
+    def getSegment(self, funcname: str, segname: str) -> dict:
+        return self.getFunction(funcname).setdefault(segname, dict())
 
-    # Utils
+    def getSegmentNormcost(self, funcname: str, segname: str) -> dict:
+        return self.getSegment(funcname, segname).setdefault(Trace.KEY_NORMCOST, dict())
+
+    def getSegmentNrcallee(self, funcname: str, segname: str) -> dict:
+        return self.getSegment(funcname, segname).setdefault(Trace.KEY_NRCALLEE, dict())
+
     def genCallingGraph(self) -> dict[str:list[str]|set[str]]:
         graph = dict()
         for fname, fdump in self.dump.items():
@@ -57,77 +76,128 @@ class Trace:
                     graph[fname] |= set(value[Trace.KEY_NRCALLEE].keys())
         return graph
 
-class TraceBuilder:
+class TraceFiller:
+    def __init__(self, trace: Trace) -> None:
+        self.trace = trace
+        self.err_msg = str()
+
+    # Fill self.trace with target.
     @abstractmethod
-    def buildFrom(self, target) -> Trace|None:
+    def fill(self, target) -> bool:
         pass
 
-class JsonTraceBuilder(TraceBuilder):
-    def buildFrom(self, target: str) -> Trace|None:
-        jsonobj = json.loads(target)
-        if Trace.KEY_COMMAND not in jsonobj or Trace.KEY_CLOCK not in jsonobj or Trace.KEY_DUMP not in jsonobj:
-            sys.stderr.write("Json trace format error.\n")
-            return None
-        trace = Trace()
-        trace.command = set(jsonobj[Trace.KEY_COMMAND])
-        trace.clock = jsonobj[Trace.KEY_CLOCK]
-        trace.dump = jsonobj[Trace.KEY_DUMP].copy()
-        # TODO: Maybe we should check format for trace.dump?
-        return trace
+class DumpFiller(TraceFiller):
+    def __init__(self, trace: Trace) -> None:
+        self.trace = trace
 
-class TimeTraceBuilder(TraceBuilder):
-    def __init__(self, command: str, clock: str) -> None:
-        self.command = command
-        self.clock = clock
+    def fill(self, target=None) -> bool:
+        # Repair format for self.trace.dump.
+        for fdump in self.trace.dump.values():
+            fdump.setdefault(Trace.KEY_FULLCOST, dict()).setdefault(Trace.COST_TIME, list())
+            for segname, segdump in fdump.items():
+                if segname != Trace.KEY_FULLCOST:
+                    segdump.setdefault(Trace.KEY_NORMCOST, dict()).setdefault(Trace.COST_TIME, list())
+                    segdump.setdefault(Trace.KEY_NRCALLEE, dict())
+        return True
 
-    # Each item in timetraces is a time trace such as '1,main__0'.
-    def buildFrom(self, target: list[str]) -> Trace | None:
+class TraceObjectFiller(TraceFiller):
+    def __init__(self, trace: Trace) -> None:
+        super().__init__(trace)
+
+    # We assume target is a valid trace object.
+    def fill(self, target: Trace) -> bool:
+        if target.clock == None or (self.trace.clock != None and self.trace.clock != target.clock):
+            self.err_msg += "clock mismatch for target(%s) and self.trace(%s)\n" % (target.clock, self.trace.clock)
+            return False
+
+        self.trace.command |= target.command
+        self.trace.clock = target.clock
+        for fname, fdump in target.dump.items():
+            if fname not in self.trace.dump:
+                self.trace.dump[fname] = fdump.copy()
+            else:
+                cur = self.trace.getFunction(fname)
+                for key, value in fdump.items():
+                    if key == Trace.KEY_FULLCOST:
+                        # Merge full function execution time.
+                        self.trace.getFunctionFullcost(fname).setdefault(Trace.COST_TIME, list()).extend(value[Trace.COST_TIME])
+                    elif key in cur:
+                        # Merge segment.
+                        self.trace.getSegmentNormcost(fname, key).setdefault(Trace.COST_TIME, list()) \
+                            .extend(value[Trace.KEY_NORMCOST][Trace.COST_TIME])
+                        cur_nrcallee = self.trace.getSegmentNrcallee(fname, key)
+                        # Merge nrcallee for segment.
+                        for calleeName, nrcalleeList in value[Trace.KEY_NRCALLEE].items():
+                            cur_nrcallee.setdefault(calleeName, list()).extend(nrcalleeList)
+                    else:
+                        # Add a new segment.
+                        cur[key] = value.copy()
+        # There is no need to fill dump anymore, cause self.trace and target are valid.
+        return True
+
+class RawTraceStringFiller(TraceFiller):
+    """
+        A simple raw trace:
+        [command] [clock]
+            1,main__0
+            2,main__1
+            3,func__0
+            4,foo__0
+            5,foo__return
+            6,func__1
+            7,func__return
+            8,main__2
+            9,main__return
+        ...
+    """
+    def __init__(self, trace: Trace) -> None:
+        super().__init__(trace)
+
+    def buildFromSingleRawTrace(self, command: str, clock: str, timetraces: list[str]) -> Trace|None:
         # Init trace object.
         traceObject = Trace()
-        traceObject.command.add(self.command)
-        traceObject.clock = self.clock
+        traceObject.command.add(command)
+        traceObject.clock = clock
         # Segment stack contains items whose format is (time, funcname, segno, and callstack contains items of func entry and func return, 
         # whose format is as same as segment stack.
         segstack, callstack = list(), list()
         try:
-            timetraces = [trace.split(',') for trace in target]
+            timetraces = [trace.split(',') for trace in timetraces]
             for time, segname in timetraces:
                 funcname, segno = SegmentFunction.parseSegmentName(segname)
-                # print(time, segname, funcname, segno, SegmentFunction.entrySegment(segno), segno == Trace.SEGNO_RETURN)
-                # print(segstack)
-                # print(callstack)
                 last_time, last_funcname, last_segno = segstack[-1] if len(segstack) != 0 else (None, None, None)
                 last_segname = SegmentFunction.makeSegmentName(last_funcname, last_segno) if last_funcname != None else None
 
                 # A piece of last segment has been executed, add time cost to it.
                 if last_segname != None:
-                    traceObject.dump.setdefault(last_funcname, dict()).setdefault(last_segname, dict())     \
-                        .setdefault(Trace.KEY_NORMCOST, [0])[0] += float(time) - float(last_time)
+                    traceObject.getSegmentNormcost(last_funcname, last_segname) \
+                        .setdefault(Trace.COST_TIME, [0])[0] += float(time) - float(last_time)
 
                 if SegmentFunction.entrySegment(segno):
-                    # Entry segment meas a function call.
-                    segstack.append([time, funcname, segno])
-                    callstack.append((time, funcname))
-                    if last_segname != None:
-                        traceObject.dump.setdefault(last_funcname, dict()).setdefault(last_segname, dict()) \
-                            .setdefault(Trace.KEY_NRCALLEE, dict()).setdefault(funcname, [0])[0] += 1
+                    # If the last time trace is a function call, there is meaningless to record it(last function will be reserved without any timing information).
+                    if time != timetraces[-1][0]:
+                        # Entry segment meas a function call.
+                        segstack.append([time, funcname, segno])
+                        callstack.append((time, funcname))
+                        if last_segname != None:
+                            traceObject.getSegmentNrcallee(last_funcname, last_segname).setdefault(funcname, [0])[0] += 1
                 else:
                     if last_funcname != funcname:
-                        sys.stderr.write("last_funcname(%s) != funcname(%s)\n" % (last_funcname, funcname))
+                        self.err_msg += "last_funcname(%s) != funcname(%s)\n" % (last_funcname, funcname)
                         return None
                     # Current segment isn't an entry segment, so the last segment has done, pop it.
                     segstack.pop()
-                    if segno == Trace.SEGNO_RETURN:
+                    if SegmentFunction.returnSegment(segno):
                         # Return to the segment before last segment(such as a__0[before last seg] -> b__0[last seg] -> b__return[cur seg]).
                         # We should upate time for the segment before last segment.
                         if len(segstack) != 0:
                             segstack[-1][0] = time
                         # Update callstack and calculate fulltime for function.
                         if 0 == len(callstack) or callstack[-1][1] != funcname:
-                            sys.stderr.write("0 == len(callstack) or callstack[-1][1] != funcname, len(callstack)=%d\n" % (len(callstack)))
+                            self.err_msg += "0 == len(callstack) or callstack[-1][1] != funcname, len(callstack)=%d\n" % (len(callstack))
                             return None
-                        traceObject.dump.setdefault(funcname, dict())   \
-                            .setdefault(Trace.KEY_FULLCOST, list()).append(float(time) - float(callstack[-1][0]))
+                        traceObject.getFunctionFullcost(funcname)   \
+                            .setdefault(Trace.COST_TIME, list()).append(float(time) - float(callstack[-1][0]))
                         callstack.pop()
                     else:
                         segstack.append([time, funcname, segno])
@@ -135,23 +205,16 @@ class TimeTraceBuilder(TraceBuilder):
             # For function doesn't return, then the full cost is (time,funcname_0 -> last time trace)
             while len(callstack) != 0:
                 time, funcname = callstack.pop()
-                traceObject.dump.setdefault(funcname, dict())   \
-                    .setdefault(Trace.KEY_FULLCOST, list()).append(float(timetraces[-1][0]) - float(time))
+                traceObject.getFunctionFullcost(funcname)   \
+                    .setdefault(Trace.COST_TIME, list()).append(float(timetraces[-1][0]) - float(time))
             # Repair format for traceObject.dump.
-            for fdump in traceObject.dump.values():
-                fdump.setdefault(Trace.KEY_FULLCOST, list())
-                for segname, segdump in fdump.items():
-                    if segname != Trace.KEY_FULLCOST:
-                        segdump.setdefault(Trace.KEY_NORMCOST, list())
-                        segdump.setdefault(Trace.KEY_NRCALLEE, dict())
-        except Exception as e:
-            sys.stderr.write("Parse time trace failed.\n")
+            DumpFiller(traceObject).fill()
+        except Exception as _:
+            self.err_msg += "Parse time trace failed.\n"
             return None
         return traceObject
 
-class RawTraceBuilder(TraceBuilder):
-    def buildFrom(self, target: str) -> Trace|None:
-        traceObject = Trace()
+    def fill(self, target: str) -> bool:
         headline_info, headline_pattern = list(), r"\[(.*?)\] \[(.*?)\]"
         rawtraces = [line for line in [line.strip() for line in target.strip().split('\n')] if len(line) != 0]
 
@@ -165,15 +228,33 @@ class RawTraceBuilder(TraceBuilder):
         # Catch rawtrace group and append it into traceObject.
         for i in range(len(headline_info)):
             begin, (command, clock) = headline_info[i][0] + 1, headline_info[i][1]
-            if i == 0:
-                traceObject.clock = clock
             if begin != len(rawtraces):
                 timetraces = rawtraces[begin:] if i == len(headline_info) - 1 else rawtraces[begin: headline_info[i+1][0]]
-                obj = TimeTraceBuilder(command, clock).buildFrom(timetraces)
-                if obj is None or not traceObject.mergeTrace(obj):
+                # Build trace object from timetraces.
+                traceObject = self.buildFromSingleRawTrace(command, clock, timetraces)
+                # Append trace object into self.trace with TraceObjectFiller.
+                if traceObject is None or not TraceObjectFiller(self.trace).fill(traceObject):
                     # TODO: Return or not return None if parse failed?
-                    sys.stderr.write("Append raw trace failed.\n")
-        return traceObject
+                    self.err_msg += "Append raw trace failed.\n"
+        return True
+
+class JsonTraceFiller(TraceFiller):
+    def __init__(self, trace: Trace) -> None:
+        super().__init__(trace)
+
+    def fill(self, target: str) -> bool:
+        jsonobj = json.loads(target)
+        if Trace.KEY_COMMAND not in jsonobj or Trace.KEY_CLOCK not in jsonobj or Trace.KEY_DUMP not in jsonobj  \
+            or not isinstance(jsonobj[Trace.KEY_COMMAND], list) or not isinstance(jsonobj[Trace.KEY_CLOCK], str) \
+            or not isinstance(jsonobj[Trace.KEY_DUMP], dict):
+            self.err_msg += "Json trace format error.\n"
+            return False
+        traceObject = Trace()
+        traceObject.command = set(jsonobj[Trace.KEY_COMMAND])
+        traceObject.clock = jsonobj[Trace.KEY_CLOCK]
+        traceObject.dump = jsonobj[Trace.KEY_DUMP].copy()
+        DumpFiller(traceObject).fill()
+        return TraceObjectFiller(self.trace).fill(traceObject)
 
 class TraceSerializer:
     @abstractmethod
@@ -181,9 +262,51 @@ class TraceSerializer:
         pass
 
 class JsonTraceSerializer(TraceSerializer):
+    def __init__(self, indent=None) -> None:
+        super().__init__()
+        self.indent = indent
+
     def serialize(self, target: Trace) -> str:
         output = dict()
         output[Trace.KEY_COMMAND] = list(target.command)
         output[Trace.KEY_CLOCK] = target.clock
         output[Trace.KEY_DUMP] = target.dump
-        return json.dumps(output, indent=4)
+        return json.dumps(output, indent=self.indent)
+
+class TraceStripper:
+    def __init__(self, trace: Trace) -> None:
+        self.trace = trace
+        self.err_msg = str()
+
+    @abstractmethod
+    def strip(self) -> bool:
+        pass
+
+# Clear all Trace.COST_TIME fields.
+class CostTimeStripper(TraceStripper):
+    def __init__(self, trace: Trace) -> None:
+        super().__init__(trace)
+    
+    def strip(self) -> bool:
+        for fdump in self.trace.dump.values():
+            for segname, value in fdump.items():
+                if segname != Trace.KEY_FULLCOST:
+                    value[Trace.KEY_NORMCOST][Trace.COST_TIME].clear()
+                else:
+                    value[Trace.COST_TIME].clear()
+        return True
+
+# Shrink function list in KEY_NRCALLEE to one max element.
+class CalleeMaximizeStripper(TraceStripper):
+    def __init__(self, trace: Trace) -> None:
+        super().__init__(trace)
+
+    def strip(self) -> bool:
+        for fdump in self.trace.dump.values():
+            for segname, value in fdump.items():
+                if segname != Trace.KEY_FULLCOST:
+                    for nrlist in value[Trace.KEY_NRCALLEE].values():
+                        max_val = max(nrlist)
+                        nrlist.clear()
+                        nrlist.append(max_val)
+        return True

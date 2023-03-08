@@ -75,6 +75,11 @@ class SegmentFunction:
     @staticmethod
     def entrySegment(segno: str):
         return segno == '0'
+    
+    # This is not a real segment, cause return probe just hints a function returns.
+    @staticmethod
+    def returnSegment(segno: str):
+        return segno == 'return'
 
 # Save information for segment flow graph.
 class SFG:
