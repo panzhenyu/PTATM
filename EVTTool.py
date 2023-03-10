@@ -47,7 +47,9 @@ class ExtremeDistribution(PWCETInterface):
 
     def expression(self) -> str:
         kwds = self.ext_func.kwds
-        return "(loc=%s,scale=%s)" % (str(round(kwds["loc"], 4)), str(round(kwds["scale"], 4)))
+        return "(%s=%s, %s=%s, %s=%s)" % (ExtremeDistribution.PARAM_SHAPE, str(round(kwds[ExtremeDistribution.PARAM_SHAPE], 4)), 
+            ExtremeDistribution.PARAM_LOC, str(round(kwds[ExtremeDistribution.PARAM_LOC], 4)), 
+            ExtremeDistribution.PARAM_SCALE, str(round(kwds[ExtremeDistribution.PARAM_SCALE], 4)))
 
 class GEV(ExtremeDistribution):
     def __init__(self, params: dict) -> None:
