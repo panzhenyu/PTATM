@@ -26,7 +26,7 @@ if __name__ == "__main__":
     angr_cfg = angr_project.analyses.CFGFast()
 
     # Refactor CFG.
-    cfg = CFG.fromAngrCFG(angr_cfg)
+    cfg = CFG(angr_cfg)
     cfg_refactor = FunctionalCFGRefactor()
     refactor_result = cfg_refactor.refactor(cfg)
 

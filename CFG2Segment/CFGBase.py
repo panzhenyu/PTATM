@@ -162,18 +162,15 @@ class CFG:
     #   functions               A dict(name:str -> func:Function) of all function within this CFG.
     # [Member]
     #   get_node                Get CFG node by addr.
-    @staticmethod
-    def fromAngrCFG(angr_cfg: angr.analyses.cfg.cfg_fast.CFGFast):
+    def __init__(self, angr_cfg: angr.analyses.cfg.cfg_fast.CFGFast) -> None:
         # Normalize this cfg first if not normalized.
         if not angr_cfg.normalized:
             angr_cfg.normalize()
         # Build CFG object.
-        cfg = CFG()
-        cfg.angr_cfg = angr_cfg
-        cfg.nodes = dict()
-        cfg.functions = dict()
-        return cfg
-    
+        self.angr_cfg = angr_cfg
+        self.nodes = dict()
+        self.functions = dict()
+
     # Modifier
     def appendCFGNode(self, node: CFGNode):
         if node.addr not in self.nodes:

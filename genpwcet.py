@@ -1,4 +1,5 @@
-from ftplib import parse227
+import numpy as np
+import matplotlib.pyplot as plt
 import TraceTool, EVTTool, PWCETSolver, argparse, json
 
 """
@@ -44,6 +45,14 @@ symbolic timing analysis field(such as gumbel, pareto) into trace file.
     }
 """
 
+# Plot sf, where sf = 1 - cdf.
+def plot_isf(isf):
+    y = np.linspace(0, 1, 1000)
+    x = [isf(prob) for prob in y]
+
+    fig, ax = plt.subplots(1, 1)
+    ax.plot(x, y, 'k-', lw=5, alpha=0.6, label='isf')
+
 if __name__ == "__main__":
     tracestr = '{"command": ["/home/pzy/project/PTATM/benchmark/benchmark"], "clock": "x86-tsc", "dump": {"main": {"main__0": {"normcost": {"time": [210538.0, 165132.0]}, "nrcallee": {"indirectCall": [1, 1], "fib": [1, 1], "directCall": [1, 1]}}, "main__1": {"normcost": {"time": [49174.0, 37884.0]}, "nrcallee": {"indirectJump": [2, 2], "fib": [1, 1], "indirectCall": [1, 1]}}, "fullcost": {"time": [504998.0, 392800.0]}}, "indirectCall": {"indirectCall__0": {"normcost": {"time": [53124.0, 41882.0]}, "nrcallee": {"foo": [2, 2]}}, "fullcost": {"time": [65072.0, 42436.0, 51674.0, 31884.0]}}, "foo": {"foo__0": {"normcost": {"time": [54384.0, 41676.0]}, "nrcallee": {}}, "fullcost": {"time": [36942.0, 17442.0, 28612.0, 13064.0]}}, "fib": {"fib__0": {"normcost": {"time": [85246.0, 64582.0]}, "nrcallee": {"fib": [2, 2]}}, "fullcost": {"time": [17618.0, 17044.0, 68174.0, 17072.0, 13476.0, 12808.0, 51640.0, 12942.0]}}, "directCall": {"directCall__0": {"normcost": {"time": [17466.0, 14398.0]}, "nrcallee": {}}, "fullcost": {"time": [17466.0, 14398.0]}}, "indirectJump": {"indirectJump__0": {"normcost": {"time": [35066.0, 27246.0]}, "nrcallee": {}}, "fullcost": {"time": [17850.0, 17216.0, 14304.0, 12942.0]}}}}'
     traceObj = TraceTool.Trace()
@@ -62,14 +71,11 @@ if __name__ == "__main__":
     #     print(TraceTool.JsonTraceSerializer().serialize(traceObj))
 
 
-    plp = EVTTool.PositiveLinearPareto()
-    pareto1 = EVTTool.Pareto()
-    pareto1.set_rawdata([1,2,3]).fit()
-    pareto2 = EVTTool.Pareto()
-    pareto2.set_rawdata([1,2,2223]).fit()
-    plp.add(pareto1)
-    plp.add(pareto2, 2)
-    print(pareto1.to_string())
-    print(pareto2.to_string())
-    print(plp.to_string())
+    plp = EVTTool.PositiveLinearExponentialPareto()
+    eptool = EVTTool.ExponentialParetoGenerator()
+    e1 = eptool.fit([1,2,3])
+    e2 = eptool.fit([1,2,2223])
+    plp.add(e1)
+    plp.add(e2, 2)
+    print(plp.expression())
     print(plp.isf(0.01))
