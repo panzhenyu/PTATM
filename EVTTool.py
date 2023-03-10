@@ -1,8 +1,6 @@
 import statsmodels.tsa.stattools as stattools
-from claripy import math
-from functools import reduce
 from abc import abstractmethod
-from scipy.stats import gamma, gumbel_r, genpareto, genextreme, cramervonmises
+from scipy.stats import gamma, genpareto, genextreme, cramervonmises
 
 # We can generate a pwcet estimate/plot from a PWCETInterface.
 class PWCETInterface:
@@ -21,15 +19,19 @@ class ExtremeDistribution(PWCETInterface):
     PARAM_LOC   = "loc"
     PARAM_SCALE = "scale"
 
+    @staticmethod
+    def validparam(params: dict) -> bool:
+        return ExtremeDistribution.PARAM_SHAPE in params and ExtremeDistribution.PARAM_LOC in params and ExtremeDistribution.PARAM_SCALE in params
+
     def __init__(self, ext_class, params: dict) -> None:
         super().__init__()
         # Here ext_class is original generator from scipy.stat.
         self.ext_class = ext_class
         # Here ext_func is original extreme distribution object from scipy.stat
-        self.regen(params)
+        self.gen(params)
 
     # Re-generate self.ext_func attribute with params.
-    def regen(self, params: dict):
+    def gen(self, params: dict):
         c = params[ExtremeDistribution.PARAM_SHAPE]
         loc = params[ExtremeDistribution.PARAM_LOC]
         scale = params[ExtremeDistribution.PARAM_SCALE]
@@ -61,34 +63,6 @@ class GPD(ExtremeDistribution):
     def expression(self) -> str:
         return "GPD" + super().expression()
 
-class Gumbel(ExtremeDistribution):
-    def __init__(self, params: dict) -> None:
-        super().__init__(genextreme, params)
-
-    def regen(self, params: dict):
-        loc = params[ExtremeDistribution.PARAM_LOC]
-        scale = params[ExtremeDistribution.PARAM_SCALE]
-        self.ext_func = self.ext_class(c=0, loc=loc, scale=scale)
-        return self
-
-    # Return an expression.
-    def expression(self) -> str:
-        return "Gumbel" + super().expression()
-
-class ExponentialPareto(ExtremeDistribution):
-    def __init__(self, params: dict) -> None:
-        super().__init__(genpareto, params)
-
-    def regen(self, params: dict):
-        loc = params[ExtremeDistribution.PARAM_LOC]
-        scale = params[ExtremeDistribution.PARAM_SCALE]
-        self.ext_func = self.ext_class(c=0, loc=loc, scale=scale)
-        return self
-
-    # Return an expression.
-    def expression(self) -> str:
-        return "ExponentialPareto" + super().expression()
-
 class LinearCombinedExtremeDistribution(PWCETInterface):
     def __init__(self) -> None:
         # A dict maps extd function(ExtremeDistribution object) to it's weight.
@@ -112,8 +86,8 @@ class PositiveLinearGumbel(LinearCombinedExtremeDistribution):
     def __init__(self) -> None:
         super().__init__()
 
-    def add(self, extd_func: Gumbel, weight: int = 1) -> bool:
-        if not isinstance(extd_func, Gumbel) or weight <= 0:
+    def add(self, extd_func: GEV, weight: int = 1) -> bool:
+        if not isinstance(extd_func, GEV) or weight <= 0 or extd_func.kwds()[ExtremeDistribution.PARAM_SHAPE] != 0:
             return False
         return super().add(extd_func, weight)
 
@@ -152,10 +126,8 @@ class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
             self.sum_loc += kwds[ExtremeDistribution.PARAM_LOC]
         self.should_gen = False
 
-    def add(self, extd_func: ExponentialPareto, weight: int = 1) -> bool:
-        if not isinstance(extd_func, ExponentialPareto) or weight <= 0:
-            return False
-        if extd_func.kwds()[ExtremeDistribution.PARAM_SHAPE] != 0:
+    def add(self, extd_func: GPD, weight: int = 1) -> bool:
+        if not isinstance(extd_func, GPD) or weight <= 0 or extd_func.kwds()[ExtremeDistribution.PARAM_SHAPE] != 0:
             return False
         return super().add(extd_func, weight)
 
@@ -179,6 +151,11 @@ class EVT:
         # pick raw samples until we pass kpss,bds,lrd test -> pick extreme value & EVT fit until we pass cvm test.
         return None
 
+    @abstractmethod
+    # Generate ExtremeDistribution object with params.
+    def gen(self, params: dict) -> ExtremeDistribution|None:
+        pass
+
     # Util.
     # Stationarity test for raw data.
     def kpss(self, raw_data: list[float]):
@@ -201,9 +178,8 @@ class EVT:
 class GEVGenerator(EVT):
     MIN_NRSAMPLE = 2
 
-    def __init__(self, extd_class: GEV = GEV, fix_c = None) -> None:
+    def __init__(self, fix_c = None) -> None:
         super().__init__()
-        self.extd_class = extd_class
         self.fix_c = fix_c
 
     @staticmethod
@@ -237,15 +213,19 @@ class GEVGenerator(EVT):
             c, loc, scale = genextreme.fit(self.ext_data)
         else:
             c, loc, scale = genextreme.fit(self.ext_data, f0=self.fix_c)
-        return self.extd_class({'c': c, 'loc': loc, 'scale': scale})
+        return self.gen({ExtremeDistribution.PARAM_SHAPE: c, ExtremeDistribution.PARAM_LOC: loc, ExtremeDistribution.PARAM_SCALE: scale})
+
+    def gen(self, params: dict) -> ExtremeDistribution|None:
+        if not ExtremeDistribution.validparam(params):
+            return None
+        return GEV(params)
 
 # Generate GPD distribution witl EVT tool.
 class GPDGenerator(EVT):
     MIN_NRSAMPLE = 1
 
-    def __init__(self, extd_class: GPD = GPD, fix_c = None) -> None:
+    def __init__(self, fix_c = None) -> None:
         super().__init__()
-        self.extd_class = extd_class
         self.fix_c = fix_c
 
     @staticmethod
@@ -276,12 +256,17 @@ class GPDGenerator(EVT):
             c, loc, scale = genpareto.fit(self.ext_data)
         else:
             c, loc, scale = genpareto.fit(self.ext_data, f0=self.fix_c)
-        return self.extd_class({'c': c, 'loc': loc, 'scale': scale})
+        return self.gen({ExtremeDistribution.PARAM_SHAPE: c, ExtremeDistribution.PARAM_LOC: loc, ExtremeDistribution.PARAM_SCALE: scale})
+
+    def gen(self, params: dict) -> ExtremeDistribution|None:
+        if not ExtremeDistribution.validparam(params):
+            return None
+        return GPD(params)
 
 class GumbelGenerator(GEVGenerator):
     def __init__(self) -> None:
-        super().__init__(Gumbel, 0)
+        super().__init__(0)
 
 class ExponentialParetoGenerator(GPDGenerator):
     def __init__(self) -> None:
-        super().__init__(ExponentialPareto, 0)
+        super().__init__(0)

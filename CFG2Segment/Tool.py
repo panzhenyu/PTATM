@@ -25,7 +25,8 @@ class GraphTool:
     # [in]  prio    A list contains node priorites used to break circle, the smaller index, the higher priority.
     # [out]         A vertex list in topological order, whose vertexs are only come from prio.
     @staticmethod
-    def topologicalSort(graph: dict[any: list | set], prio: list) -> list:
+    def topologicalSort(graph: dict[any: list | set], prio: list = None) -> list:
+        prio = list(graph.keys()) if prio is None else prio
         vertexs, nr_vertex, vindex, topolist = prio, len(prio), dict(), list()
         adjmat = numpy.zeros((nr_vertex, nr_vertex), dtype=int)
         # Init vindex.

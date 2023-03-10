@@ -76,6 +76,9 @@ class Trace:
                     graph[fname] |= set(value[Trace.KEY_NRCALLEE].keys())
         return graph
 
+    def hasFunction(self, funcname: str) -> bool:
+        return funcname in self.dump
+
 class TraceFiller:
     def __init__(self, trace: Trace) -> None:
         self.trace = trace
