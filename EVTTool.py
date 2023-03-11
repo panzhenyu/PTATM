@@ -40,7 +40,7 @@ class ExtremeDistribution(PWCETInterface):
 
     # Return self.ext_func.kwds.
     def kwds(self) -> dict:
-        return self.ext_func.kwds
+        return self.ext_func.kwds.copy()
 
     def isf(self, exceed_prob: float) -> float:
         return self.ext_func.isf(exceed_prob)
@@ -91,7 +91,11 @@ class PositiveLinearGumbel(LinearCombinedExtremeDistribution):
     def add(self, extd_func: GEV, weight: int = 1) -> bool:
         if not isinstance(extd_func, GEV) or weight <= 0 or extd_func.kwds()[ExtremeDistribution.PARAM_SHAPE] != 0:
             return False
-        return super().add(extd_func, weight)
+        kwds = extd_func.kwds()
+        kwds[ExtremeDistribution.PARAM_LOC] *= weight
+        kwds[ExtremeDistribution.PARAM_SCALE] *= weight
+        extd_func.gen(kwds)
+        return super().add(extd_func, 1)
 
     # Return a value with exceedance probability(exceed_prob).
     def isf(self, exceed_prob: float) -> float:
@@ -113,19 +117,20 @@ class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
         # Attributes works for isf according to self.weighted_evtfunc.
         # Those attrs should be re-generate if self.weighted_evtfunc is changed.
         self.gamma_func = None
-        self.max_scale = None
         self.sum_loc = None
+        self.scales = None
         self.should_gen = True
 
     # Generate helper attrs: gamma_func, max_scale, sum_loc.
     def genHelper(self):
         self.gamma_func = gamma(a=len(self.weighted_extdfunc), loc=0, scale=1)
-        self.max_scale = -1
         self.sum_loc = 0
+        self.scales = list()
         for extd_func, weight in self.weighted_extdfunc.items():
             kwds = extd_func.kwds()
-            self.max_scale = max(self.max_scale, weight*kwds[ExtremeDistribution.PARAM_SCALE])
             self.sum_loc += kwds[ExtremeDistribution.PARAM_LOC]
+            self.scales.append(weight*kwds[ExtremeDistribution.PARAM_SCALE])
+        self.scales.sort()
         self.should_gen = False
 
     def add(self, extd_func: GPD, weight: int = 1) -> bool:
@@ -137,7 +142,7 @@ class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
     def isf(self, exceed_prob: float) -> float:
         if self.should_gen:
             self.genHelper()
-        return self.max_scale*self.gamma_func.isf(exceed_prob) + self.sum_loc
+        return self.scales[-1]*self.gamma_func.isf(exceed_prob) + self.sum_loc
 
 # A theory tool that helps to generate ExtremeDistribution object.
 class EVT:
