@@ -71,7 +71,7 @@ if __name__ == "__main__":
         print("solve failed")
     else:
         print("expression: ", linear_extd.expression())
-        probs = [0.1, 1e-2, 1e-3, 1e-4, 1e-5]
+        probs = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9]
         pwcet = [linear_extd.isf(prob) for prob in probs]
         print("probs:", probs)
         print("pwcet:", pwcet)
