@@ -17,8 +17,13 @@ Generate segment probe for interested functions of binary file.
 """
 
 if __name__ == "__main__":
-    binary = "/home/pzy/project/PTATM/benchmark/benchmark"
-    functions = list(set(["main", "indirectCall", "foo", "fib", "indirectJump", "directCall"]))
+    benchmark = "/home/pzy/project/PTATM/benchmark/benchmark"
+    benchmark_func = list(set(["main", "indirectCall", "foo", "fib", "indirectJump", "directCall"]))
+    gcc = "/usr/local/software/spec2006/benchspec/CPU2006/403.gcc/run/run_base_ref_amd64-m64-gcc42-nn.0000/gcc_base.amd64-m64-gcc42-nn"
+    gcc_func = list(["main", "toplev_main"])
+
+    binary = gcc
+    functions = gcc_func
     max_seg = 2
 
     # Parse binary with angr.

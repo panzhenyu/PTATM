@@ -14,6 +14,11 @@ class PWCETInterface:
     def expression(self) -> str:
         return str()
 
+    # Copy this object.
+    @abstractmethod
+    def copy(self):
+        pass
+
 class ExtremeDistribution(PWCETInterface):
     PARAM_SHAPE = "c"
     PARAM_LOC   = "loc"
@@ -30,6 +35,18 @@ class ExtremeDistribution(PWCETInterface):
         # Here ext_func is original extreme distribution object from scipy.stat
         self.gen(params)
 
+    def isf(self, exceed_prob: float) -> float:
+        return self.ext_func.isf(exceed_prob)
+
+    def expression(self) -> str:
+        kwds = self.ext_func.kwds
+        return "(%s=%s, %s=%s, %s=%s)" % (ExtremeDistribution.PARAM_SHAPE, str(round(kwds[ExtremeDistribution.PARAM_SHAPE], 4)), 
+            ExtremeDistribution.PARAM_LOC, str(round(kwds[ExtremeDistribution.PARAM_LOC], 4)), 
+            ExtremeDistribution.PARAM_SCALE, str(round(kwds[ExtremeDistribution.PARAM_SCALE], 4)))
+
+    def copy(self):
+        return ExtremeDistribution(self.ext_class, self.kwds())
+
     # Re-generate self.ext_func attribute with params.
     def gen(self, params: dict):
         c = params[ExtremeDistribution.PARAM_SHAPE]
@@ -41,15 +58,6 @@ class ExtremeDistribution(PWCETInterface):
     # Return self.ext_func.kwds.
     def kwds(self) -> dict:
         return self.ext_func.kwds.copy()
-
-    def isf(self, exceed_prob: float) -> float:
-        return self.ext_func.isf(exceed_prob)
-
-    def expression(self) -> str:
-        kwds = self.ext_func.kwds
-        return "(%s=%s, %s=%s, %s=%s)" % (ExtremeDistribution.PARAM_SHAPE, str(round(kwds[ExtremeDistribution.PARAM_SHAPE], 4)), 
-            ExtremeDistribution.PARAM_LOC, str(round(kwds[ExtremeDistribution.PARAM_LOC], 4)), 
-            ExtremeDistribution.PARAM_SCALE, str(round(kwds[ExtremeDistribution.PARAM_SCALE], 4)))
 
 class GEV(ExtremeDistribution):
     def __init__(self, params: dict) -> None:
@@ -70,6 +78,18 @@ class LinearCombinedExtremeDistribution(PWCETInterface):
         # A dict maps extd function(ExtremeDistribution object) to it's weight.
         self.weighted_extdfunc = dict()
 
+    def expression(self) -> str:
+        expr = str()
+        for extd_func, weight in self.weighted_extdfunc.items():
+            expr += str(weight) + '*' + extd_func.expression() + '+'
+        return expr[:-1]
+
+    def copy(self):
+        linear_extd = LinearCombinedExtremeDistribution()
+        for extd_func, weight in self.weighted_extdfunc:
+            linear_extd[extd_func.copy()] = weight
+        return linear_extd
+
     def add(self, extd_func: ExtremeDistribution, weight: int = 1) -> bool:
         self.weighted_extdfunc.setdefault(extd_func, 0)
         self.weighted_extdfunc[extd_func] += weight
@@ -77,12 +97,6 @@ class LinearCombinedExtremeDistribution(PWCETInterface):
 
     def clear(self):
         self.weighted_extdfunc.clear()
-
-    def expression(self) -> str:
-        expr = str()
-        for extd_func, weight in self.weighted_extdfunc.items():
-            expr += str(weight) + '*' + extd_func.expression() + '+'
-        return expr[:-1]
 
 class PositiveLinearGumbel(LinearCombinedExtremeDistribution):
     def __init__(self) -> None:
@@ -94,8 +108,7 @@ class PositiveLinearGumbel(LinearCombinedExtremeDistribution):
         kwds = extd_func.kwds()
         kwds[ExtremeDistribution.PARAM_LOC] *= weight
         kwds[ExtremeDistribution.PARAM_SCALE] *= weight
-        extd_func.gen(kwds)
-        return super().add(extd_func, 1)
+        return super().add(extd_func.copy().gen(kwds), 1)
 
     # Return a value with exceedance probability(exceed_prob).
     def isf(self, exceed_prob: float) -> float:
@@ -114,6 +127,7 @@ class PositiveLinearGumbel(LinearCombinedExtremeDistribution):
 class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
     def __init__(self) -> None:
         super().__init__()
+        self.k = 1
         # Attributes works for isf according to self.weighted_evtfunc.
         # Those attrs should be re-generate if self.weighted_evtfunc is changed.
         self.gamma_func = None
@@ -121,15 +135,21 @@ class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
         self.scales = None
         self.should_gen = True
 
+    # Return a value with exceedance probability(exceed_prob).
+    def isf(self, exceed_prob: float) -> float:
+        if self.should_gen:
+            self.genArgs()
+        return (self.k*self.scales[-1])*self.gamma_func.isf(exceed_prob) + self.sum_loc
+
     # Generate helper attrs: gamma_func, max_scale, sum_loc.
-    def genHelper(self):
+    def genArgs(self):
         self.gamma_func = gamma(a=len(self.weighted_extdfunc), loc=0, scale=1)
         self.sum_loc = 0
         self.scales = list()
         for extd_func, weight in self.weighted_extdfunc.items():
             kwds = extd_func.kwds()
             self.sum_loc += kwds[ExtremeDistribution.PARAM_LOC]
-            self.scales.append(weight*kwds[ExtremeDistribution.PARAM_SCALE])
+            self.scales.append(weight * kwds[ExtremeDistribution.PARAM_SCALE])
         self.scales.sort()
         self.should_gen = False
 
@@ -137,12 +157,18 @@ class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
         if not isinstance(extd_func, GPD) or weight <= 0 or extd_func.kwds()[ExtremeDistribution.PARAM_SHAPE] != 0:
             return False
         return super().add(extd_func, weight)
+    
+    def addLinear(self, linear_extd) -> bool:
+        for extd_func, weight in linear_extd.weighted_extdfunc:
+            if False == self.add(extd_func, weight):
+                return False
+        self.should_gen = False
+        return True
 
-    # Return a value with exceedance probability(exceed_prob).
-    def isf(self, exceed_prob: float) -> float:
-        if self.should_gen:
-            self.genHelper()
-        return self.scales[-1]*self.gamma_func.isf(exceed_prob) + self.sum_loc
+    def mul(self, k: int):
+        self.k *= k
+        self.should_gen = False
+        return self
 
 # A theory tool that helps to generate ExtremeDistribution object.
 class EVT:
