@@ -112,10 +112,12 @@ class BlockCheckSearcher(SegmentSearcher):
         # 1. Find a path start with entry block and end with the node saticfies isEndpoint.
         # 2. Check each path node and collect those satisfy isSeperatorNode.
 
-        # Search a valid path.
-        path = self.searchValidPath(start, ends, getSuccessors)
+        # Search a valid path, [1:-1] removes startpoint and endpoint.
+        path = list()
+        self.searchValidPathRecursive(path, set(), start, ends, getSuccessors)
+        # path = self.searchValidPath(start, ends, getSuccessors)
         # Collect all separate nodes.
-        return [vertex for vertex in path if self.isSeparateNode(vertex, start, ends, getSuccessors)]
+        return [vertex for vertex in path[1:-1] if self.isSeparateNode(vertex, start, ends, getSuccessors)]
 
     def searchValidPath(self, start, ends: set, getSuccessors):
         # DFS stack: (vertex, depth)
@@ -132,10 +134,32 @@ class BlockCheckSearcher(SegmentSearcher):
                 if successor in pathSet:
                     continue
                 elif successor in ends:
-                    return path[1:]
+                    path.append(successor)
+                    return path
                 else:
                     bs.append((successor, depth+1))
         return list()
+
+    def searchValidPathRecursive(self, path: list, visit: set, start, ends: set, getSuccessors):
+        # Return immediately if we meets with endpoint.
+        if len(path) > 0 and path[-1] in ends:
+            return
+
+        # Visit current node and add it to path.
+        path.append(start)
+        visit.add(start)
+        
+        # DFS successor if we haven't visit.
+        for successor in getSuccessors(start):
+            if successor not in visit:
+                self.searchValidPathRecursive(path, visit, successor, ends, getSuccessors)
+
+        if path[-1] in ends:
+            return
+
+        # Retrospect.
+        visit.remove(start)
+        path.pop()
 
     def isSeparateNode(self, target, start, ends: set, getSuccessors):
         if target == start:

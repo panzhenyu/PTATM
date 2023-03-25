@@ -52,6 +52,7 @@ class FunctionRefactor(CFGRefactor):
                 # We cannot get node for this addr.
                 # This may appear in function whose is_simprocedure is True.
                 self.emptyblock_addr.append(node.addr)
+                # TODO: Maybe we should remove this node from target.nodes?
             else:
                 # Deal with each successor.
                 for successor in angrNode.successors():
@@ -113,7 +114,7 @@ class FunctionalCFGRefactor(CFGRefactor):
         for angrFunc in target.angr_cfg.functions.values():
             # Build function object.
             func = CFGBase.Function.fromAngrFunction(angrFunc, target.angr_cfg)
-            if func.is_plt or func.has_unresolved_jumps or func.is_simprocedure or 0 == func.size:
+            if func.is_plt or func.has_unresolved_jumps or func.is_simprocedure or func.is_default_name or 0 == func.size:
                 # Ignore plt function and those who has unresolved jumps.
                 self.passed.append(func)
             else:
