@@ -76,7 +76,15 @@ class FunctionRefactor(CFGRefactor):
                     else:
                         # Add to unresolved_block.
                         self.unresolved_block.append(successor)
-        return True
+            if len(node.successors) == 0:
+                target.endpoints.add(node)
+        
+        # Remove None node from endpoints.
+        if None in target.endpoints:
+            target.endpoints.remove(None)
+
+        # Return false if this CFG isn't a valid CFG.
+        return None != target.startpoint and 0 != len(target.endpoints)
 
 class FunctionCFGReset(CFGRefactor):
     def refactor(self, target: CFGBase.CFG):

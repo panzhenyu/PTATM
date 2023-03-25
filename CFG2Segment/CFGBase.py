@@ -81,7 +81,7 @@ class Function:
     #   node_addrs_set          A set of all CFG nodes' address.
     #   nodes                   A dict which maps all addr to corresponding CFG node within this function.
     #   startpoint              Entry CFG node of this function.
-    #   endpoints               A list of CFG nodes which can leave this function.
+    #   endpoints               A set of CFG nodes which can leave this function.
     #   endpoints_with_type     A dict maps ending type to endpoints.
     #   has_return              Whether this function has return.
     #   has_unresolved_calls    Whether this function has unresolved calls.
@@ -116,7 +116,7 @@ class Function:
         func.node_addrs_set = angr_function.block_addrs_set.copy()
         func.nodes = {addr:CFGNode.fromAngrCFGNode(angr_cfg.get_any_node(addr)) for addr in func.node_addrs_set}
         func.startpoint = func.getNode(func.addr)
-        func.endpoints = [func.getNode(node.addr) for node in angr_function.endpoints if node is not None]
+        func.endpoints = set([func.getNode(node.addr) for node in angr_function.endpoints if node is not None])
         func.endpoints_with_type = {type:set([func.getNode(node.addr) for node in nodes if node is not None]) for type, nodes in angr_function.endpoints_with_type.items()}
         func.has_return = angr_function.has_return
         func.has_unresolved_calls = angr_function.has_unresolved_calls
@@ -128,14 +128,6 @@ class Function:
         func.offset = angr_function.offset
         func.callees = set()
         func.is_recursive = False
-
-        # Double check endpoints.
-        for endpoint in func.endpoints:
-            if (endpoint.block is None or 'call' not in endpoint.block.disassembly.insns[-1].mnemonic) and not endpoint.has_return:
-                func.endpoints.remove(endpoint)
-
-        assert(None != func.startpoint)
-        assert(None not in func.endpoints)
 
         return func
 

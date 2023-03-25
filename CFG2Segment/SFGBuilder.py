@@ -42,7 +42,7 @@ class FunctionalSegmentListBuilder(SFGBuilder):
         # Calculate the max num of separators.
         max_sep = self.max_seg - 1
         # Get all possible separators.
-        seps = [sep.addr for sep in Tool.BlockCheckSearcher().search(function.startpoint, set(function.endpoints), lambda x: x.successors)]
+        seps = [sep.addr for sep in Tool.BlockCheckSearcher().search(function.startpoint, function.endpoints, lambda x: x.successors)]
         # Sort the address.
         seps.sort()
         # Shrink separators if len(sepNodes) > max_sep.
