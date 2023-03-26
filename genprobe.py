@@ -22,8 +22,8 @@ if __name__ == "__main__":
     gcc = "/usr/local/software/spec2006/benchspec/CPU2006/403.gcc/run/run_base_ref_amd64-m64-gcc42-nn.0000/gcc_base.amd64-m64-gcc42-nn"
     gcc_func = list(["main", "toplev_main"])
 
-    binary = gcc
-    functions = gcc_func
+    binary = benchmark
+    functions = benchmark_func
     max_seg = 2
 
     # Parse binary with angr.

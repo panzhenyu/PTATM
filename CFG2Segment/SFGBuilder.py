@@ -55,6 +55,8 @@ class FunctionalSegmentListBuilder(SFGBuilder):
                 # Ensure the safe border.
                 if index < cur_sep:
                     final.append(seps[index])
+        else:
+            final = seps
         return final
 
     def build(self, target: SFGBase.SegmentFunction) -> bool:
