@@ -64,8 +64,8 @@ class Trace:
     def getSegmentNormcost(self, funcname: str, segname: str) -> dict:
         return self.getSegment(funcname, segname).setdefault(Trace.KEY_NORMCOST, dict())
 
-    def getSegmentNrcallee(self, funcname: str, segname: str) -> dict:
-        return self.getSegment(funcname, segname).setdefault(Trace.KEY_NRCALLEE, dict())
+    def getSegmentNrcallee(self, funcname: str, segname: str) -> list:
+        return self.getSegment(funcname, segname).setdefault(Trace.KEY_NRCALLEE, list())
 
     def genCallingGraph(self) -> dict[str:list[str]|set[str]]:
         graph = dict()
@@ -73,7 +73,7 @@ class Trace:
             graph[fname] = set()
             for key, value in fdump.items():
                 if key != Trace.KEY_FULLCOST:
-                    graph[fname] |= set(value[Trace.KEY_NRCALLEE].keys())
+                    graph[fname] |= set(fname for funclist in value[Trace.KEY_NRCALLEE] for fname in funclist)
         return graph
 
     def hasFunction(self, funcname: str) -> bool:
@@ -100,7 +100,7 @@ class DumpFiller(TraceFiller):
             for segname, segdump in fdump.items():
                 if segname != Trace.KEY_FULLCOST:
                     segdump.setdefault(Trace.KEY_NORMCOST, dict()).setdefault(Trace.COST_TIME, list())
-                    segdump.setdefault(Trace.KEY_NRCALLEE, dict())
+                    segdump.setdefault(Trace.KEY_NRCALLEE, list())
         return True
 
 class TraceObjectFiller(TraceFiller):
@@ -126,12 +126,8 @@ class TraceObjectFiller(TraceFiller):
                         self.trace.getFunctionFullcost(fname).setdefault(Trace.COST_TIME, list()).extend(value[Trace.COST_TIME])
                     elif key in cur:
                         # Merge segment.
-                        self.trace.getSegmentNormcost(fname, key).setdefault(Trace.COST_TIME, list()) \
-                            .extend(value[Trace.KEY_NORMCOST][Trace.COST_TIME])
-                        cur_nrcallee = self.trace.getSegmentNrcallee(fname, key)
-                        # Merge nrcallee for segment.
-                        for calleeName, nrcalleeList in value[Trace.KEY_NRCALLEE].items():
-                            cur_nrcallee.setdefault(calleeName, list()).extend(nrcalleeList)
+                        self.trace.getSegmentNormcost(fname, key).setdefault(Trace.COST_TIME, list()).extend(value[Trace.KEY_NORMCOST][Trace.COST_TIME])
+                        self.trace.getSegmentNrcallee(fname, key).extend(value[Trace.KEY_NRCALLEE])
                     else:
                         # Add a new segment.
                         cur[key] = value.copy()
@@ -163,7 +159,7 @@ class RawTraceStringFiller(TraceFiller):
         traceObject.clock = clock
         # Segment stack contains items whose format is (time, funcname, segno, and callstack contains items of func entry and func return, 
         # whose format is as same as segment stack.
-        segstack, callstack = list(), list()
+        funcdepth, funcdomain, segstack, callstack = dict(), dict(), list(), list()
         try:
             timetraces = [trace.split(',') for trace in timetraces]
             for time, segname in timetraces:
@@ -171,47 +167,62 @@ class RawTraceStringFiller(TraceFiller):
                 last_time, last_funcname, last_segno = segstack[-1] if len(segstack) != 0 else (None, None, None)
                 last_segname = SegmentFunction.makeSegmentName(last_funcname, last_segno) if last_funcname != None else None
 
-                # A piece of last segment has been executed, add time cost to it.
-                if last_segname != None:
-                    traceObject.getSegmentNormcost(last_funcname, last_segname) \
-                        .setdefault(Trace.COST_TIME, [0])[0] += float(time) - float(last_time)
-
                 if SegmentFunction.entrySegment(segno):
                     # If the last time trace is a function call, there is meaningless to record it(last function will be reserved without any timing information).
                     if time != timetraces[-1][0]:
                         # Entry segment meas a function call.
+                        if funcdepth.setdefault(funcname, 0) == 0:
+                            # A new domain start.
+                            funcdomain.setdefault(funcname, list()).append(dict())
+                        funcdepth[funcname] += 1
                         segstack.append([time, funcname, segno])
                         callstack.append((time, funcname))
                         if last_segname != None:
-                            traceObject.getSegmentNrcallee(last_funcname, last_segname).setdefault(funcname, [0])[0] += 1
+                            # Add to latest domain.
+                            seginfo = funcdomain[last_funcname][-1].setdefault(last_segname, dict())
+                            seginfo.setdefault(Trace.KEY_NRCALLEE, list()).append(funcname)
+                elif last_funcname != funcname:
+                    self.err_msg += "last_funcname(%s) != funcname(%s)\n" % (last_funcname, funcname)
+                    return None
                 else:
-                    if last_funcname != funcname:
-                        self.err_msg += "last_funcname(%s) != funcname(%s)\n" % (last_funcname, funcname)
-                        return None
                     # Current segment isn't an entry segment, so the last segment has done, pop it.
                     segstack.pop()
                     if SegmentFunction.returnSegment(segno):
                         # Return to the segment before last segment(such as a__0[before last seg] -> b__0[last seg] -> b__return[cur seg]).
+                        # Update funcdepth.
+                        funcdepth[funcname] -= 1
                         # We should upate time for the segment before last segment.
                         if len(segstack) != 0:
                             segstack[-1][0] = time
                         # Update callstack and calculate fulltime for function.
-                        if 0 == len(callstack) or callstack[-1][1] != funcname:
-                            self.err_msg += "0 == len(callstack) or callstack[-1][1] != funcname, len(callstack)=%d\n" % (len(callstack))
-                            return None
-                        traceObject.getFunctionFullcost(funcname)   \
-                            .setdefault(Trace.COST_TIME, list()).append(float(time) - float(callstack[-1][0]))
-                        callstack.pop()
+                        traceObject.getFunctionFullcost(funcname).setdefault(Trace.COST_TIME, list()).append(float(time) - float(callstack.pop()[0]))
                     else:
                         segstack.append([time, funcname, segno])
+
+                # A piece of last segment has been executed, add time cost to last domain.
+                if last_segname != None:
+                    seginfo = funcdomain[last_funcname][-1].setdefault(last_segname, dict())
+                    seginfo.setdefault(Trace.COST_TIME, 0)
+                    seginfo[Trace.COST_TIME] += float(time) - float(last_time)
+
+            # Merge all function domain.
+            for fname, domains in funcdomain.items():
+                for domain in domains:
+                    for segname, seginfo in domain.items():
+                        cost = seginfo.setdefault(Trace.COST_TIME, 0)
+                        callees = seginfo.setdefault(Trace.KEY_NRCALLEE, list())
+                        if cost > 0:
+                            traceObject.getSegmentNormcost(fname, segname).setdefault(Trace.COST_TIME, list()).append(cost)
+                        if len(callees) > 0:
+                            traceObject.getSegmentNrcallee(fname, segname).append(callees)
             # len(segstack) != 0 means the program abort or exit directly, but all time info of segment has been collected.
             # For function doesn't return, then the full cost is (time,funcname_0 -> last time trace)
             while len(callstack) != 0:
                 time, funcname = callstack.pop()
-                traceObject.getFunctionFullcost(funcname)   \
-                    .setdefault(Trace.COST_TIME, list()).append(float(timetraces[-1][0]) - float(time))
+                traceObject.getFunctionFullcost(funcname).setdefault(Trace.COST_TIME, list()).append(float(timetraces[-1][0]) - float(time))
             # Repair format for traceObject.dump.
             DumpFiller(traceObject).fill()
+
         except Exception as _:
             self.err_msg += "Parse time trace failed.\n"
             return None
@@ -300,7 +311,7 @@ class CostTimeStripper(TraceStripper):
         return True
 
 # Shrink function list in KEY_NRCALLEE to one max element.
-class CalleeMaximizeStripper(TraceStripper):
+class CalleeStripper(TraceStripper):
     def __init__(self, trace: Trace) -> None:
         super().__init__(trace)
 
@@ -308,8 +319,6 @@ class CalleeMaximizeStripper(TraceStripper):
         for fdump in self.trace.dump.values():
             for segname, value in fdump.items():
                 if segname != Trace.KEY_FULLCOST:
-                    for nrlist in value[Trace.KEY_NRCALLEE].values():
-                        max_val = max(nrlist)
-                        nrlist.clear()
-                        nrlist.append(max_val)
+                    strippedcallee = [list(uniquelist) for uniquelist in set(tuple(calleelist) for calleelist in value[Trace.KEY_NRCALLEE])]
+                    value[Trace.KEY_NRCALLEE] = strippedcallee
         return True

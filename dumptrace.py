@@ -41,19 +41,19 @@ Dump segment info from (raw/json)trace file.
                         "normcost": {
                             "time": [1] (main__1 - main__0)
                         }, 
-                        "nrcallee": {}
+                        "nrcallee": []
                     }, 
                     "main__1": {
                         "normcost": {
                             "time": [2] (func__0 - main__1 + main__2 - func__return)
                         }, 
-                        "nrcallee": { "func": [1] }
+                        "nrcallee": [["func"]]
                     }, 
                     "main__2": {
                         "normcost": {
                             "time": [1] (main__return - main__2)
                         }, 
-                        "nrcallee": {}
+                        "nrcallee": []
                     },
                     "fullcost": {
                         "time": [8], (main__return - main__0)
@@ -64,13 +64,13 @@ Dump segment info from (raw/json)trace file.
                         "normcost": {
                             "time": [2] (foo__0 - func__0 + func__1 - foo__return)
                         },
-                        "nrcallee": { "foo": [1] }
+                        "nrcallee": [["foo"]]
                     }, 
                     "func__1": {
                         "normcost": {
                             "time": [1] (func__return - func__1)
                         }, 
-                        "nrcallee": {}
+                        "nrcallee": []
                     }, 
                     "funcost": {
                         "time": [4] (func__return - func__0)
@@ -81,7 +81,7 @@ Dump segment info from (raw/json)trace file.
                         "normcost":  {
                             "time": [1] (foo__return - foo__0)
                         }
-                        "nrcallee": {}
+                        "nrcallee": []
                     }, 
                     "funcost":  {
                         "time": [1] (foo__return - foo__0)
@@ -136,33 +136,29 @@ if __name__ == "__main__":
         1631826846116844,foo__return
         1631826846124440,indirectCall__return
         1631826846132324,main__return
-        [/home/pzy/project/PTATM/benchmark/benchmark] [x86-tsc]
-        1631827067753170,main__0
-        1631827067896650,indirectCall__0
-        1631827067912938,foo__0
-        1631827067941550,foo__return
-        1631827067948324,indirectCall__return
-        1631827067955374,fib__0
-        1631827067969146,fib__0
-        1631827067982622,fib__return
-        1631827067988526,fib__0
-        1631827068001334,fib__return
-        1631827068007014,fib__return
-        1631827068014598,directCall__0
-        1631827068028996,directCall__return
-        1631827068036014,main__1
-        1631827068049158,indirectJump__0
-        1631827068063462,indirectJump__return
-        1631827068069810,indirectJump__0
-        1631827068082752,indirectJump__return
-        1631827068088628,fib__0
-        1631827068101570,fib__return
-        1631827068107656,indirectCall__0
-        1631827068120768,foo__0
-        1631827068133832,foo__return
-        1631827068139540,indirectCall__return
-        1631827068145970,main__return
     """
+
+    rawTrace =  """
+        [/home/pzy/project/PTATM/benchmark/benchmark] [x86-tsc]
+        1,main__0
+        2,main__1
+        3,foo__0
+        4,foo__return
+        5,recursive__0
+        6,recursive__1
+        7,foo__0
+        8,foo__return
+        9,recursive__0
+        10,recursive__1
+        11,func__0
+        12,func__return
+        13,recursive__return
+        14,recursive__return
+        15,main__2
+        16,main__2
+        17,main__return
+    """
+
     traceObj = Trace()
     filler = RawTraceStringFiller(traceObj)
     if filler.fill(rawTrace) == False:
@@ -171,6 +167,6 @@ if __name__ == "__main__":
         print(JsonTraceSerializer(4).serialize(traceObj))
         print(filler.err_msg)
         # CostTimeStripper(traceObj).strip()
-        # print(JsonTraceSerializer().serialize(traceObj))
-        # CalleeMaximizeStripper(traceObj).strip()
-        # print(JsonTraceSerializer().serialize(traceObj))
+        # print(JsonTraceSerializer(4).serialize(traceObj))
+        # CalleeStripper(traceObj).strip()
+        # print(JsonTraceSerializer(4).serialize(traceObj))
