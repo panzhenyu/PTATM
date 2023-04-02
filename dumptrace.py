@@ -1,6 +1,6 @@
 
 import argparse, sys
-from TraceTool import *
+from SegmentInfoCollector.TraceTool import *
 
 """
 Usage: python3 dumptrace.py command [options] file [file]

@@ -1,0 +1,63 @@
+{
+    "Task": [
+        {
+            "id": "508-ref",
+            "dir": "/usr/local/software/spec2017/benchspec/CPU/508.namd_r/run/run_base_refrate_mytest-m64.0000",
+            "cmd": "./namd_r_base.mytest-m64 --input apoa1.input --output apoa1.ref.output --iterations 65"
+        },
+        {
+            "id": "401.bzip2",
+            "dir": "/usr/local/software/spec2006/benchspec/CPU2006/401.bzip2/run/run_base_ref_amd64-m64-gcc42-nn.0000/",
+            "cmd": "./bzip2_base.amd64-m64-gcc42-nn chicken.jpg 30"
+        },
+        {
+            "id": "SetScanner",
+            "dir": ".",
+            "cmd": "./SetScanner --set=$1 --assoc=64"
+        }
+    ],
+
+    "Plan": [
+        {
+            "id": "sample-plan",
+            "type": "SAMPLE_ALL",
+            "task": {
+                "id": "508-ref",
+                "param": [],
+                "rt": true,
+                "pincpu": true
+            },
+            "perf": {
+                "leader": "INSTRUCTIONS",
+                "period": 100000000,
+                "member": ["CYCLES", "LLC_MISSES", "LLC_REFERENCES"]
+            }
+        },
+        {
+            "id": "Set0",
+            "type": "COUNT",
+            "task": {
+                "id": "SetScanner",
+                "param": ["30"],
+                "rt": true,
+                "pincpu": true
+            },
+            "perf": {
+                "leader":"LLC_MISSES"
+            }
+        },
+        {
+            "id": "Set1024",
+            "type": "COUNT",
+            "task": {
+                "id": "SetScanner",
+                "param": ["1024"],
+                "rt": true,
+                "pincpu": true
+            },
+            "perf": {
+                "leader":"LLC_MISSES"
+            }
+        }
+    ]
+}

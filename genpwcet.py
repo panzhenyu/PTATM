@@ -1,6 +1,8 @@
+import argparse, json
 import numpy as np
 import matplotlib.pyplot as plt
-import TraceTool, EVTTool, PWCETSolver, argparse, json
+from SegmentInfoCollector import TraceTool
+from PWCETGenerator import EVTTool, PWCETSolver
 
 """
 Usage: python3 genpwcet.py command [options] trace

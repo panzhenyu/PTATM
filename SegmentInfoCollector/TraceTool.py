@@ -1,4 +1,4 @@
-import json, re
+import json, re, sys
 from abc import abstractmethod
 from CFG2Segment.SFGBase import SegmentFunction
 

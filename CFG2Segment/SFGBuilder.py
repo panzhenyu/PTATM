@@ -47,7 +47,7 @@ class FunctionalSegmentListBuilder(SFGBuilder):
         seps.sort()
         # Shrink separators if len(sepNodes) > max_sep.
         cur_sep = len(seps)
-        if cur_sep > max_sep and max_seg > 0:
+        if cur_sep > max_sep and self.max_seg > 0:
             cur, step = 0, cur_sep/self.max_seg
             for _ in range(max_sep):
                 cur += step

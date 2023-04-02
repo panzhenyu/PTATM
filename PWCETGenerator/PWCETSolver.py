@@ -1,7 +1,8 @@
 
-import TraceTool, EVTTool
+from . import EVTTool
 from abc import abstractmethod
 from CFG2Segment.Tool import GraphTool
+from SegmentInfoCollector import TraceTool
 
 class GeneralPWCETSolver:
     def __init__(self, extd_generator: EVTTool.EVT, symtrace_tag: str):

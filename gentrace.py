@@ -88,8 +88,16 @@ def fetchSegmentAndTime(traceinfo: str) -> str:
     pure = str()
     for trace in [record.strip() for record in traceinfo.strip().split('\n')]:
         info = trace.split(' ')
+        time, segname = None, None
+        for elem in info:
+            timeres = re.match(r'^[1-9]\d*(\.\d+)?$', elem[:-1])
+            segres = re.match(r'.+__.+', elem[:-1])
+            if timeres != None:
+                time = timeres.group()
+            if segres != None:
+                segname = segres.group()
         # TODO: Direct index is unsafe.
-        pure += info[3][:-1] + ',' + info[4][:-1] + '\n'
+        pure += time + ',' + segname + '\n'
     return pure
 
 # Returns (True, trace) or (False, error message).
@@ -114,8 +122,8 @@ if __name__ == "__main__":
     clock_old = getTraceClock()
     if clock_old is not None:
         atexit.register(setTraceClock, clock_old)
-    atexit.register(disableAllTrace)
     atexit.register(delprobe, PROBE_ALL)
+    atexit.register(disableAllTrace)
 
     # Add probes.
     delprobe(PROBE_ALL)
