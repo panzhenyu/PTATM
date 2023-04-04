@@ -3,19 +3,32 @@
         {
             "id": "SetScanner",
             "dir": ".",
-            "cmd": "./SetScanner --set=$1 --assoc=64"
+            "cmd": "./SetScanner --set=$1 --assoc=64 --repeat=10000000"
         }
     ],
 
     "Plan": [
         {
             "id": "Set0",
+            "type": "SAMPLE_ALL",
+            "task": {
+                "id": "SetScanner",
+                "param": ["0"],
+                "rt": true,
+                "pincpu": true
+            },
+            "perf": {
+                "leader": "CYCLES",
+                "period": 10000000,
+                "member": ["LLC_MISSES"]
+            }
+        },
+        {
+            "id": "Set0-mirror",
             "type": "COUNT",
             "task": {
                 "id": "SetScanner",
-                "param": [
-                    "0"
-                ],
+                "param": ["0"],
                 "rt": true,
                 "pincpu": true
             },

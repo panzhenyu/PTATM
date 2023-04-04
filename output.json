@@ -1,0 +1,107 @@
+{
+    "command": [
+        "/home/pzy/project/PTATM/benchmark/benchmark"
+    ],
+    "clock": "x86-tsc",
+    "dump": {
+        "foo": {
+            "fullcost": {
+                "time": [
+                    1.0,
+                    1.0
+                ]
+            },
+            "foo__0": {
+                "normcost": {
+                    "time": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "nrcallee": []
+            }
+        },
+        "func": {
+            "fullcost": {
+                "time": [
+                    1.0
+                ]
+            },
+            "func__0": {
+                "normcost": {
+                    "time": [
+                        1.0
+                    ]
+                },
+                "nrcallee": []
+            }
+        },
+        "recursive": {
+            "fullcost": {
+                "time": [
+                    4.0,
+                    9.0
+                ]
+            },
+            "recursive__0": {
+                "normcost": {
+                    "time": [
+                        2.0
+                    ]
+                },
+                "nrcallee": []
+            },
+            "recursive__1": {
+                "normcost": {
+                    "time": [
+                        5.0
+                    ]
+                },
+                "nrcallee": [
+                    [
+                        "foo",
+                        "recursive",
+                        "func"
+                    ]
+                ]
+            }
+        },
+        "main": {
+            "fullcost": {
+                "time": [
+                    16.0
+                ]
+            },
+            "main__0": {
+                "normcost": {
+                    "time": [
+                        1.0
+                    ]
+                },
+                "nrcallee": []
+            },
+            "main__1": {
+                "normcost": {
+                    "time": [
+                        3.0
+                    ]
+                },
+                "nrcallee": [
+                    [
+                        "foo",
+                        "recursive"
+                    ]
+                ]
+            },
+            "main__2": {
+                "normcost": {
+                    "time": [
+                        2.0
+                    ]
+                },
+                "nrcallee": []
+            }
+        }
+    }
+}
+
