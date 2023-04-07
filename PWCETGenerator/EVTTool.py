@@ -136,7 +136,7 @@ class PositiveLinearGumbel(LinearCombinedExtremeDistribution):
 # Thus, min{σi} * ∑yi + ∑ui <= ∑xi <= max{σi} * ∑yi + ∑ui and p(∑xi < max{σi}*k+∑ui) >= pk
 # Finally, for exceedance probability ep = 1 - pk, cause  p(∑yi >= k) = 1 - pk = ep, then p(∑xi >= max{σi}*k+∑ui) <= 1 - pk = ep,
 # we can promise the probability of pwcet=max{σi}*k+∑ui is smaller than the given probability ep.
-# For weighted exponential variable x,  x ~ E(u, σ), then weight*x ~ E(u, weight*σ).
+# For weighted exponential variable x,  x ~ E(u, σ), then weight*x ~ E(weight*u, weight*σ).
 class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
     def __init__(self) -> None:
         super().__init__()
@@ -160,7 +160,7 @@ class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
         self.max_scale = 0
         for extd_func, weight in self.weighted_extdfunc.items():
             kwds = extd_func.kwds()
-            self.sum_loc += kwds[ExtremeDistribution.PARAM_LOC]
+            self.sum_loc += weight * kwds[ExtremeDistribution.PARAM_LOC]
             self.max_scale = max(self.max_scale, weight * kwds[ExtremeDistribution.PARAM_SCALE])
         self.should_gen = False
 
@@ -172,11 +172,11 @@ class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
     def addLinear(self, linear_extd) -> bool:
         if not super().addLinear(linear_extd):
             return False
-        self.should_gen = False
+        self.should_gen = True
         return True
 
     def mul(self, k: int):
-        self.should_gen = False
+        self.should_gen = True
         return super().mul(k)
 
 # A theory tool that helps to generate ExtremeDistribution object.

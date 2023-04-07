@@ -59,12 +59,6 @@ class SegmentListSolver(GeneralPWCETSolver):
         # Class to build linear combination of extreme distribution.
         self.linearextd_class = linearextd_class
 
-    def buildLinearExtdFromExtdList(extd_list: list) -> EVTTool.LinearCombinedExtremeDistribution:
-        linear_extd = self.linearextd_class()
-        for extd in extd_list:
-            linear_extd.add(extd)
-        return linear_extd
-
     # Generate concrete PWCETInterface object for pwcet estimate, this function will generate symbolic trace if necessary.
     # Now we define the pwcet distribution of function.
     # Assume a function F is organized by a set of segments S, where S = {Si | 1 <= i <= n}.
@@ -81,40 +75,58 @@ class SegmentListSolver(GeneralPWCETSolver):
         call_graph = trace.genCallingGraph()
         topo_order = GraphTool.topologicalSort(call_graph)
         func_expr, segment_extd, func_lextd = dict(), dict(), dict()
-
         # Build extd of normcost for each segment, and build linear combination of extreme distribution for each function under reverse topological order.
         for fname in topo_order:
             if not trace.hasFunction(fname):
                 self.err_msg += "Cannot find calling function[%s].\n" % fname
                 return None
-
             # Build for each segment.
             linear_extd = self.linearextd_class()
             for key, value in trace.getFunction(fname).items():
                 if key == TraceTool.Trace.KEY_FULLCOST:
                     continue
+                # Catch segment information.
                 if TraceTool.Trace.KEY_NORMCOST not in value:
                     self.err_msg += "Cannot find " + TraceTool.Trace.KEY_NORMCOST + " in segment[%s].\n" % key
                     return None
                 if TraceTool.Trace.KEY_CALLINFO not in value:
                     self.err_msg += "Cannot find " + TraceTool.Trace.KEY_CALLINFO + " in segment[%s].\n" % key
                     return None
+                segment_normcost = value[TraceTool.Trace.KEY_NORMCOST]
+                segment_callinfo = value[TraceTool.Trace.KEY_CALLINFO]
                 # Build evt trace for segment.
-                segment_extd[key] = self.buildExtdFuncFromCost(value[TraceTool.Trace.KEY_NORMCOST])
+                segment_extd[key] = self.buildExtdFuncFromCost(segment_normcost)
                 if segment_extd[key] is None:
                     self.err_msg += "Build symbolic trace failed for segment[%s].\n" % key
                     return None
                 # Add segment cost into linear_extd for current function.
                 linear_extd.add(segment_extd[key])
+                func_expr.setdefault(fname, list()).append(key)
                 # Add max function cost into linear_extd for current function.
-                max_callseq = self.maximize(value[TraceTool.Trace.KEY_CALLINFO], func_expr.keys())
-                # linear_extd.addLinear(self.buildLinearExtdFromExtdList([func_lextd[callee] for callee in max_callseq]))
-            func_lextd = linear_extd
-        return self.linearextd_class()
+                if 0 != len(segment_callinfo):
+                    max_callseq = [callee for callee in self.getMaxCallseq(segment_callinfo, func_lextd) if callee in func_lextd]
+                    linear_extd.addLinear(self.buildLinearExtd4Extdlist([func_lextd[callee] for callee in max_callseq]))
+                    for callee in max_callseq:
+                        func_expr.setdefault(fname, list()).extend(func_expr[callee])
+            func_lextd[fname] = linear_extd
+        # print(call_graph)
+        # print(func_expr[funcname])
+        return func_lextd[funcname]
+    
+    def buildLinearExtd4Extdlist(self, extd_list: list) -> EVTTool.LinearCombinedExtremeDistribution:
+        linear_extd = self.linearextd_class()
+        for extd in extd_list:
+            if isinstance(extd, self.linearextd_class):
+                if not linear_extd.addLinear(extd):
+                    return None
+            else:
+                if not linear_extd.add(extd):
+                    return None
+        return linear_extd
 
     @abstractmethod
-    def getMaxCallseq(self, calleeinfo: list, existed_callee: list) -> list:
-        pass
+    def getMaxCallseq(self, callinfo: list, callee_lextd: list) -> list:
+        return callinfo[-1]
 
 class GumbelSegmentListSolver(SegmentListSolver):
     COST_TAG = "gumbel"
