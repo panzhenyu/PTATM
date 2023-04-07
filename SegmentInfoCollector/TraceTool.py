@@ -17,10 +17,7 @@ from CFG2Segment.SFGBase import SegmentFunction
                             "pareto": {"c": 0, "loc": 0, "scale": 1},
                             "gumbel": {"loc": 0, "scale": 1}
                         }, 
-                        "nrcallee": {
-                            "callee": [1, 2],
-                            other callee...
-                        }
+                        "callinfo": [[callee1, callee1, callee2], ...]
                     }, 
                 }, 
                 other segment...,
@@ -40,7 +37,7 @@ class Trace:
     KEY_CLOCK       = "clock"
     KEY_DUMP        = "dump"
     KEY_NORMCOST    = "normcost"
-    KEY_NRCALLEE    = "nrcallee"
+    KEY_CALLINFO    = "callinfo"
     KEY_FULLCOST    = "fullcost"
 
     # Cost field constants.
@@ -64,16 +61,16 @@ class Trace:
     def getSegmentNormcost(self, funcname: str, segname: str) -> dict:
         return self.getSegment(funcname, segname).setdefault(Trace.KEY_NORMCOST, dict())
 
-    def getSegmentNrcallee(self, funcname: str, segname: str) -> list:
-        return self.getSegment(funcname, segname).setdefault(Trace.KEY_NRCALLEE, list())
+    def getSegmentCallInfo(self, funcname: str, segname: str) -> list:
+        return self.getSegment(funcname, segname).setdefault(Trace.KEY_CALLINFO, list())
 
-    def genCallingGraph(self) -> dict[str:list[str]|set[str]]:
+    def genCallingGraph(self) -> dict:
         graph = dict()
         for fname, fdump in self.dump.items():
             graph[fname] = set()
             for key, value in fdump.items():
                 if key != Trace.KEY_FULLCOST:
-                    graph[fname] |= set(fname for funclist in value[Trace.KEY_NRCALLEE] for fname in funclist)
+                    graph[fname] |= set(fname for funclist in value[Trace.KEY_CALLINFO] for fname in funclist)
         return graph
 
     def hasFunction(self, funcname: str) -> bool:
@@ -100,7 +97,7 @@ class DumpFiller(TraceFiller):
             for segname, segdump in fdump.items():
                 if segname != Trace.KEY_FULLCOST:
                     segdump.setdefault(Trace.KEY_NORMCOST, dict()).setdefault(Trace.COST_TIME, list())
-                    segdump.setdefault(Trace.KEY_NRCALLEE, list())
+                    segdump.setdefault(Trace.KEY_CALLINFO, list())
         return True
 
 class TraceObjectFiller(TraceFiller):
@@ -127,7 +124,7 @@ class TraceObjectFiller(TraceFiller):
                     elif key in cur:
                         # Merge segment.
                         self.trace.getSegmentNormcost(fname, key).setdefault(Trace.COST_TIME, list()).extend(value[Trace.KEY_NORMCOST][Trace.COST_TIME])
-                        self.trace.getSegmentNrcallee(fname, key).extend(value[Trace.KEY_NRCALLEE])
+                        self.trace.getSegmentCallInfo(fname, key).extend(value[Trace.KEY_CALLINFO])
                     else:
                         # Add a new segment.
                         cur[key] = value.copy()
@@ -180,7 +177,7 @@ class RawTraceStringFiller(TraceFiller):
                         if last_segname != None:
                             # Add to latest domain.
                             seginfo = funcdomain[last_funcname][-1].setdefault(last_segname, dict())
-                            seginfo.setdefault(Trace.KEY_NRCALLEE, list()).append(funcname)
+                            seginfo.setdefault(Trace.KEY_CALLINFO, list()).append(funcname)
                 elif last_funcname != funcname:
                     self.err_msg += "last_funcname(%s) != funcname(%s)\n" % (last_funcname, funcname)
                     return None
@@ -210,11 +207,11 @@ class RawTraceStringFiller(TraceFiller):
                 for domain in domains:
                     for segname, seginfo in domain.items():
                         cost = seginfo.setdefault(Trace.COST_TIME, 0)
-                        callees = seginfo.setdefault(Trace.KEY_NRCALLEE, list())
+                        callees = seginfo.setdefault(Trace.KEY_CALLINFO, list())
                         if cost > 0:
                             traceObject.getSegmentNormcost(fname, segname).setdefault(Trace.COST_TIME, list()).append(cost)
                         if len(callees) > 0:
-                            traceObject.getSegmentNrcallee(fname, segname).append(callees)
+                            traceObject.getSegmentCallInfo(fname, segname).append(callees)
             # len(segstack) != 0 means the program abort or exit directly, but all time info of segment has been collected.
             # For function doesn't return, then the full cost is (time,funcname_0 -> last time trace)
             while len(callstack) != 0:
@@ -310,7 +307,7 @@ class CostTimeStripper(TraceStripper):
                     value[Trace.COST_TIME].clear()
         return True
 
-# Shrink function list in KEY_NRCALLEE to one max element.
+# Shrink function list in KEY_CALLINFO to one max element.
 class CalleeStripper(TraceStripper):
     def __init__(self, trace: Trace) -> None:
         super().__init__(trace)
@@ -319,6 +316,6 @@ class CalleeStripper(TraceStripper):
         for fdump in self.trace.dump.values():
             for segname, value in fdump.items():
                 if segname != Trace.KEY_FULLCOST:
-                    strippedcallee = [list(uniquelist) for uniquelist in set(tuple(calleelist) for calleelist in value[Trace.KEY_NRCALLEE])]
-                    value[Trace.KEY_NRCALLEE] = strippedcallee
+                    strippedcallee = [list(uniquelist) for uniquelist in set(tuple(calleelist) for calleelist in value[Trace.KEY_CALLINFO])]
+                    value[Trace.KEY_CALLINFO] = strippedcallee
         return True

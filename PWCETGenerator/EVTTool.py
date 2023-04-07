@@ -86,7 +86,7 @@ class LinearCombinedExtremeDistribution(PWCETInterface):
 
     def copy(self):
         linear_extd = LinearCombinedExtremeDistribution()
-        for extd_func, weight in self.weighted_extdfunc:
+        for extd_func, weight in self.weighted_extdfunc.items():
             linear_extd[extd_func.copy()] = weight
         return linear_extd
 
@@ -94,6 +94,19 @@ class LinearCombinedExtremeDistribution(PWCETInterface):
         self.weighted_extdfunc.setdefault(extd_func, 0)
         self.weighted_extdfunc[extd_func] += weight
         return True
+    
+    def addLinear(self, linear_extd) -> bool:
+        orig = self.weighted_extdfunc.copy()
+        for extd_func, weight in linear_extd.weighted_extdfunc.items():
+            if False == self.add(extd_func, weight):
+                self.weighted_extdfunc = orig
+                return False
+        return True
+
+    def mul(self, k: int):
+        for extd_func, weight in linear_extd.weighted_extdfunc.items():
+            self.weighted_extdfunc[extd_func] = weight * k
+        return self
 
     def clear(self):
         self.weighted_extdfunc.clear()
@@ -127,48 +140,44 @@ class PositiveLinearGumbel(LinearCombinedExtremeDistribution):
 class PositiveLinearExponentialPareto(LinearCombinedExtremeDistribution):
     def __init__(self) -> None:
         super().__init__()
-        self.k = 1
         # Attributes works for isf according to self.weighted_evtfunc.
         # Those attrs should be re-generate if self.weighted_evtfunc is changed.
         self.gamma_func = None
         self.sum_loc = None
-        self.scales = None
+        self.max_scale = None
         self.should_gen = True
 
     # Return a value with exceedance probability(exceed_prob).
     def isf(self, exceed_prob: float) -> float:
         if self.should_gen:
             self.genArgs()
-        return (self.k*self.scales[-1])*self.gamma_func.isf(exceed_prob) + self.sum_loc
+        return self.max_scale*self.gamma_func.isf(exceed_prob) + self.sum_loc
 
     # Generate helper attrs: gamma_func, max_scale, sum_loc.
     def genArgs(self):
         self.gamma_func = gamma(a=len(self.weighted_extdfunc), loc=0, scale=1)
         self.sum_loc = 0
-        self.scales = list()
+        self.max_scale = 0
         for extd_func, weight in self.weighted_extdfunc.items():
             kwds = extd_func.kwds()
             self.sum_loc += kwds[ExtremeDistribution.PARAM_LOC]
-            self.scales.append(weight * kwds[ExtremeDistribution.PARAM_SCALE])
-        self.scales.sort()
+            self.max_scale = max(self.max_scale, weight * kwds[ExtremeDistribution.PARAM_SCALE])
         self.should_gen = False
 
     def add(self, extd_func: GPD, weight: int = 1) -> bool:
         if not isinstance(extd_func, GPD) or weight <= 0 or extd_func.kwds()[ExtremeDistribution.PARAM_SHAPE] != 0:
             return False
         return super().add(extd_func, weight)
-    
+
     def addLinear(self, linear_extd) -> bool:
-        for extd_func, weight in linear_extd.weighted_extdfunc:
-            if False == self.add(extd_func, weight):
-                return False
+        if not super().addLinear(linear_extd):
+            return False
         self.should_gen = False
         return True
 
     def mul(self, k: int):
-        self.k *= k
         self.should_gen = False
-        return self
+        return super().mul(k)
 
 # A theory tool that helps to generate ExtremeDistribution object.
 class EVT:

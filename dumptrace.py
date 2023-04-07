@@ -30,7 +30,7 @@ Dump segment info from (raw/json)trace file.
             8,main__2
             9,main__return
 
-    then we output time trace(note that every non-exit func should always appear in nrcallee and dump concurrently):
+    then we output time trace(note that every non-exit func should always appear in callinfo and dump concurrently):
         {
             "command": ["command"]
             "clock": "clock",
@@ -41,19 +41,19 @@ Dump segment info from (raw/json)trace file.
                         "normcost": {
                             "time": [1] (main__1 - main__0)
                         }, 
-                        "nrcallee": []
+                        "callinfo": []
                     }, 
                     "main__1": {
                         "normcost": {
                             "time": [2] (func__0 - main__1 + main__2 - func__return)
                         }, 
-                        "nrcallee": [["func"]]
+                        "callinfo": [["func"]]
                     }, 
                     "main__2": {
                         "normcost": {
                             "time": [1] (main__return - main__2)
                         }, 
-                        "nrcallee": []
+                        "callinfo": []
                     },
                     "fullcost": {
                         "time": [8], (main__return - main__0)
@@ -64,13 +64,13 @@ Dump segment info from (raw/json)trace file.
                         "normcost": {
                             "time": [2] (foo__0 - func__0 + func__1 - foo__return)
                         },
-                        "nrcallee": [["foo"]]
+                        "callinfo": [["foo"]]
                     }, 
                     "func__1": {
                         "normcost": {
                             "time": [1] (func__return - func__1)
                         }, 
-                        "nrcallee": []
+                        "callinfo": []
                     }, 
                     "funcost": {
                         "time": [4] (func__return - func__0)
@@ -81,7 +81,7 @@ Dump segment info from (raw/json)trace file.
                         "normcost":  {
                             "time": [1] (foo__return - foo__0)
                         }
-                        "nrcallee": []
+                        "callinfo": []
                     }, 
                     "funcost":  {
                         "time": [1] (foo__return - foo__0)
@@ -164,9 +164,8 @@ if __name__ == "__main__":
     if filler.fill(rawTrace) == False:
         sys.stderr.write("Build raw trace failed.\n%s" % filler.err_msg)
     else:
-        print(JsonTraceSerializer(4).serialize(traceObj))
         print(filler.err_msg)
         # CostTimeStripper(traceObj).strip()
         # print(JsonTraceSerializer(4).serialize(traceObj))
-        # CalleeStripper(traceObj).strip()
-        # print(JsonTraceSerializer(4).serialize(traceObj))
+        CalleeStripper(traceObj).strip()
+        print(JsonTraceSerializer(4).serialize(traceObj))

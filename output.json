@@ -18,7 +18,7 @@
                         1.0
                     ]
                 },
-                "nrcallee": []
+                "callinfo": []
             }
         },
         "func": {
@@ -33,7 +33,7 @@
                         1.0
                     ]
                 },
-                "nrcallee": []
+                "callinfo": []
             }
         },
         "recursive": {
@@ -49,7 +49,7 @@
                         2.0
                     ]
                 },
-                "nrcallee": []
+                "callinfo": []
             },
             "recursive__1": {
                 "normcost": {
@@ -57,7 +57,7 @@
                         5.0
                     ]
                 },
-                "nrcallee": [
+                "callinfo": [
                     [
                         "foo",
                         "recursive",
@@ -78,7 +78,7 @@
                         1.0
                     ]
                 },
-                "nrcallee": []
+                "callinfo": []
             },
             "main__1": {
                 "normcost": {
@@ -86,7 +86,7 @@
                         3.0
                     ]
                 },
-                "nrcallee": [
+                "callinfo": [
                     [
                         "foo",
                         "recursive"
@@ -99,7 +99,7 @@
                         2.0
                     ]
                 },
-                "nrcallee": []
+                "callinfo": []
             }
         }
     }

@@ -41,7 +41,7 @@ class GeneralPWCETSolver:
 
     # Build ExtremeDistribution object from symbolic trace, return None if build failed.
     # This function will generate symbolic trace if necessary.
-    def buildExtdFuncFromCost(self, cost: dict) -> EVTTool.ExtremeDistribution | None:
+    def buildExtdFuncFromCost(self, cost: dict) -> EVTTool.ExtremeDistribution:
         if self.symtrace_tag not in cost or not EVTTool.ExtremeDistribution.validparam(cost[self.symtrace_tag]):
             if False == self.genSymbolicCost(cost):
                 return None
@@ -50,7 +50,7 @@ class GeneralPWCETSolver:
     # Generate concrete PWCETInterface object for pwcet estimate.
     # This function will generate symbolic trace if necessary.
     @abstractmethod
-    def solve(self, trace: TraceTool.Trace, funcname: str) -> EVTTool.PWCETInterface | None:
+    def solve(self, trace: TraceTool.Trace, funcname: str) -> EVTTool.PWCETInterface:
         pass
 
 class SegmentListSolver(GeneralPWCETSolver):
@@ -58,6 +58,12 @@ class SegmentListSolver(GeneralPWCETSolver):
         super().__init__(extd_generator, symtrace_tag)
         # Class to build linear combination of extreme distribution.
         self.linearextd_class = linearextd_class
+
+    def buildLinearExtdFromExtdList(extd_list: list) -> EVTTool.LinearCombinedExtremeDistribution:
+        linear_extd = self.linearextd_class()
+        for extd in extd_list:
+            linear_extd.add(extd)
+        return linear_extd
 
     # Generate concrete PWCETInterface object for pwcet estimate, this function will generate symbolic trace if necessary.
     # Now we define the pwcet distribution of function.
@@ -67,55 +73,76 @@ class SegmentListSolver(GeneralPWCETSolver):
     # Cause norm cost doesn't contains execution time of function call, we treat v(F) as execution time random variable of function F,
     # then we have v(F) = ∑di + ∑∑maxnr(si, Cj)*v(Cj), which donates a linear combination of extreme distributions.
     # For situation of calling loop, each segment within the loop should only be encountered once until a loop break.
-    def solve(self, trace: TraceTool.Trace, funcname: str) -> EVTTool.LinearCombinedExtremeDistribution | None:
+    def solve(self, trace: TraceTool.Trace, funcname: str) -> EVTTool.LinearCombinedExtremeDistribution:
         if not trace.hasFunction(funcname):
             self.err_msg += "Cannot find function[%s].\n" % funcname
             return None
-        call_graph, total_nrcall = trace.genCallingGraph(), {funcname: 1}
-        topoIndex = {fname:idx for idx, fname in enumerate(GraphTool.topologicalSort(call_graph))}
-        
-        # Build linear combination of extreme distribution for funcname with calling graph.
-        # 1. Collect num of total call of each function called by funcname.
-        stack = [(funcname, 1)]
-        while len(stack) > 0:
-            cur_fname, cur_nr = stack.pop()
-            segments_callees = [value[TraceTool.Trace.KEY_NRCALLEE] for key, value in trace.getFunction(cur_fname).items() 
-                if key != TraceTool.Trace.KEY_FULLCOST and TraceTool.Trace.KEY_NRCALLEE in value]
-            for segment_callees in segments_callees:
-                for next_fname, next_nrlist in segment_callees.items():
-                    # Use topo index to break loop.
-                    if topoIndex[next_fname] >= topoIndex[cur_fname] or not trace.hasFunction(next_fname):
-                        continue
-                    next_nr = int(max(next_nrlist) * cur_nr)
-                    stack.append((next_fname, next_nr))
-                    total_nrcall.setdefault(next_fname, 0)
-                    total_nrcall[next_fname] += next_nr
-        # 2. Now all functions are unrolling, just append nr * symbolic_trace(norcost) for each segment of function.
-        linear_extd = self.linearextd_class()
-        for fname, nr in total_nrcall.items():
-            segments_normcost = [(key, value[TraceTool.Trace.KEY_NORMCOST]) for key, value in trace.getFunction(fname).items() 
-                if key != TraceTool.Trace.KEY_FULLCOST and TraceTool.Trace.KEY_NORMCOST in value]
-            for segname, segment_cost in segments_normcost:
-                extd_func = self.buildExtdFuncFromCost(segment_cost)
-                if extd_func is None:
-                    self.err_msg += "Build symbolic trace failed for segment[%s].\n" % segname
+
+        call_graph = trace.genCallingGraph()
+        topo_order = GraphTool.topologicalSort(call_graph)
+        func_expr, segment_extd, func_lextd = dict(), dict(), dict()
+
+        # Build extd of normcost for each segment, and build linear combination of extreme distribution for each function under reverse topological order.
+        for fname in topo_order:
+            if not trace.hasFunction(fname):
+                self.err_msg += "Cannot find calling function[%s].\n" % fname
+                return None
+
+            # Build for each segment.
+            linear_extd = self.linearextd_class()
+            for key, value in trace.getFunction(fname).items():
+                if key == TraceTool.Trace.KEY_FULLCOST:
+                    continue
+                if TraceTool.Trace.KEY_NORMCOST not in value:
+                    self.err_msg += "Cannot find " + TraceTool.Trace.KEY_NORMCOST + " in segment[%s].\n" % key
                     return None
-                linear_extd.add(extd_func, nr)
-        return linear_extd
+                if TraceTool.Trace.KEY_CALLINFO not in value:
+                    self.err_msg += "Cannot find " + TraceTool.Trace.KEY_CALLINFO + " in segment[%s].\n" % key
+                    return None
+                # Build evt trace for segment.
+                segment_extd[key] = self.buildExtdFuncFromCost(value[TraceTool.Trace.KEY_NORMCOST])
+                if segment_extd[key] is None:
+                    self.err_msg += "Build symbolic trace failed for segment[%s].\n" % key
+                    return None
+                # Add segment cost into linear_extd for current function.
+                linear_extd.add(segment_extd[key])
+                # Add max function cost into linear_extd for current function.
+                max_callseq = self.maximize(value[TraceTool.Trace.KEY_CALLINFO], func_expr.keys())
+                # linear_extd.addLinear(self.buildLinearExtdFromExtdList([func_lextd[callee] for callee in max_callseq]))
+            func_lextd = linear_extd
+        return self.linearextd_class()
+
+    @abstractmethod
+    def getMaxCallseq(self, calleeinfo: list, existed_callee: list) -> list:
+        pass
 
 class GumbelSegmentListSolver(SegmentListSolver):
     COST_TAG = "gumbel"
     def __init__(self):
         super().__init__(EVTTool.GumbelGenerator(), GumbelSegmentListSolver.COST_TAG, EVTTool.PositiveLinearGumbel)
 
+    def maximize(self, linear_extdlist: list) -> EVTTool.LinearCombinedExtremeDistribution:
+        linear_extd = self.linearextd_class()
+        return linear_extd
+
 class ExponentialParetoSegmentListSolver(SegmentListSolver):
     COST_TAG = "exponential pareto"
     def __init__(self):
         super().__init__(EVTTool.ExponentialParetoGenerator(), ExponentialParetoSegmentListSolver.COST_TAG, EVTTool.PositiveLinearExponentialPareto) 
 
+    def maximize(self, linear_extdlist: list) -> EVTTool.LinearCombinedExtremeDistribution:
+        linear_extd = self.linearextd_class()
+
+        
+        for lextd in linear_extdlist:
+            lextd.genArgs()
+
+
+        return linear_extd
+
 class SegmentGraphSolver(GeneralPWCETSolver):
     # Generate concrete PWCETInterface object for pwcet estimate.
     # This function will generate symbolic trace if necessary.
     @abstractmethod
-    def solve(self, trace: TraceTool.Trace, funcname: str) -> EVTTool.PWCETInterface | None:
+    def solve(self, trace: TraceTool.Trace, funcname: str) -> EVTTool.PWCETInterface:
         pass
