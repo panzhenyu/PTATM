@@ -1,6 +1,7 @@
 
 from . import EVTTool
 from abc import abstractmethod
+from collections import Counter
 from CFG2Segment.Tool import GraphTool
 from SegmentInfoCollector import TraceTool
 
@@ -54,10 +55,14 @@ class GeneralPWCETSolver:
         pass
 
 class SegmentListSolver(GeneralPWCETSolver):
-    def __init__(self, extd_generator: EVTTool.EVT, symtrace_tag: str, linearextd_class: EVTTool.LinearCombinedExtremeDistribution):
+    def __init__(self, extd_generator: EVTTool.EVT, symtrace_tag: str, linearextd_class):
         super().__init__(extd_generator, symtrace_tag)
         # Class to build linear combination of extreme distribution.
         self.linearextd_class = linearextd_class
+        self.call_graph = dict()
+        self.topo_order = list()
+        self.func_expr = dict()
+        self.segment_extd = dict()
 
     # Generate concrete PWCETInterface object for pwcet estimate, this function will generate symbolic trace if necessary.
     # Now we define the pwcet distribution of function.
@@ -72,16 +77,18 @@ class SegmentListSolver(GeneralPWCETSolver):
             self.err_msg += "Cannot find function[%s].\n" % funcname
             return None
 
-        call_graph = trace.genCallingGraph()
-        topo_order = GraphTool.topologicalSort(call_graph)
-        func_expr, segment_extd, func_lextd = dict(), dict(), dict()
+        self.call_graph = trace.genCallingGraph()
+        self.topo_order = GraphTool.topologicalSort(self.call_graph)
+        self.func_expr = dict()
+        self.segment_extd = dict()
+
         # Build extd of normcost for each segment, and build linear combination of extreme distribution for each function under reverse topological order.
-        for fname in topo_order:
+        for findex, fname in enumerate(self.topo_order):
             if not trace.hasFunction(fname):
                 self.err_msg += "Cannot find calling function[%s].\n" % fname
                 return None
-            # Build for each segment.
-            linear_extd = self.linearextd_class()
+            # Build for each segment of current function.
+            cur_expr = dict()
             for key, value in trace.getFunction(fname).items():
                 if key == TraceTool.Trace.KEY_FULLCOST:
                     continue
@@ -95,62 +102,66 @@ class SegmentListSolver(GeneralPWCETSolver):
                 segment_normcost = value[TraceTool.Trace.KEY_NORMCOST]
                 segment_callinfo = value[TraceTool.Trace.KEY_CALLINFO]
                 # Build evt trace for segment.
-                segment_extd[key] = self.buildExtdFuncFromCost(segment_normcost)
-                if segment_extd[key] is None:
+                self.segment_extd[key] = self.buildExtdFuncFromCost(segment_normcost)
+                if self.segment_extd[key] is None:
                     self.err_msg += "Build symbolic trace failed for segment[%s].\n" % key
                     return None
-                # Add segment cost into linear_extd for current function.
-                linear_extd.add(segment_extd[key])
-                func_expr.setdefault(fname, list()).append(key)
-                # Add max function cost into linear_extd for current function.
+                # Add segment cost to cur_expr.
+                cur_expr.setdefault(key, 0)
+                cur_expr[key] += 1
+                # Add function cost to cur_expr if exists.
                 if 0 != len(segment_callinfo):
-                    max_callseq = [callee for callee in self.getMaxCallseq(segment_callinfo, func_lextd) if callee in func_lextd]
-                    linear_extd.addLinear(self.buildLinearExtd4Extdlist([func_lextd[callee] for callee in max_callseq]))
-                    for callee in max_callseq:
-                        func_expr.setdefault(fname, list()).extend(func_expr[callee])
-            func_lextd[fname] = linear_extd
-        # print(call_graph)
-        # print(func_expr[funcname])
-        return func_lextd[funcname]
-    
-    def buildLinearExtd4Extdlist(self, extd_list: list) -> EVTTool.LinearCombinedExtremeDistribution:
+                    # Find max function cost.
+                    max_callseq = self.maxCallseq(segment_callinfo, self.topo_order[:findex])
+                    # Add function cost to cur_expr.
+                    for callee, nr_callee in max_callseq.items():
+                        for segname, nr_seg in self.func_expr[callee].items():
+                            cur_expr.setdefault(segname, 0)
+                            cur_expr[segname] += nr_seg * nr_callee
+            self.func_expr[fname] = cur_expr
+        # Rebuild lextd from function expr.
+        return self.lextd4Function(funcname)
+
+    def lextd4Expr(self, expr: list) -> EVTTool.LinearCombinedExtremeDistribution:
         linear_extd = self.linearextd_class()
-        for extd in extd_list:
-            if isinstance(extd, self.linearextd_class):
-                if not linear_extd.addLinear(extd):
-                    return None
-            else:
-                if not linear_extd.add(extd):
-                    return None
+        for segname, nr_seg in expr.items():
+            if segname not in self.segment_extd or not linear_extd.add(self.segment_extd[segname], nr_seg):
+                return None
         return linear_extd
 
-    @abstractmethod
-    def getMaxCallseq(self, callinfo: list, callee_lextd: list) -> list:
-        return callinfo[-1]
+    def lextd4Function(self, funcname: str) -> EVTTool.LinearCombinedExtremeDistribution:
+        return None if funcname not in self.func_expr else self.lextd4Expr(self.func_expr[funcname])
+
+    # Return a dict about call seq, the key is callee, the value is nr_callee.
+    def maxCallseq(self, callinfo: list, valid_callees: list) -> dict:
+        max_count = {callee: 0 for callee in valid_callees}
+        for callseq in callinfo:
+            for callee, nr_callee in dict(Counter(callseq)).items():
+                if callee in max_count and max_count[callee] < nr_callee:
+                    max_count[callee] = nr_callee
+        return max_count
 
 class GumbelSegmentListSolver(SegmentListSolver):
     COST_TAG = "gumbel"
     def __init__(self):
         super().__init__(EVTTool.GumbelGenerator(), GumbelSegmentListSolver.COST_TAG, EVTTool.PositiveLinearGumbel)
 
-    def maximize(self, linear_extdlist: list) -> EVTTool.LinearCombinedExtremeDistribution:
-        linear_extd = self.linearextd_class()
-        return linear_extd
-
 class ExponentialParetoSegmentListSolver(SegmentListSolver):
     COST_TAG = "exponential pareto"
     def __init__(self):
         super().__init__(EVTTool.ExponentialParetoGenerator(), ExponentialParetoSegmentListSolver.COST_TAG, EVTTool.PositiveLinearExponentialPareto) 
 
-    def maximize(self, linear_extdlist: list) -> EVTTool.LinearCombinedExtremeDistribution:
-        linear_extd = self.linearextd_class()
+    # def lextd4Expr(self, expr: dict, segment_extd: list) -> EVTTool.LinearCombinedExtremeDistribution:
+    #     linear_extd = self.linearextd_class()
+    #     for segname, nr_seg in expr.items():
+    #         if not linear_extd.add(segment_extd[segname], nr_seg):
+    #             return None
+    #     return linear_extd
 
-        
-        for lextd in linear_extdlist:
-            lextd.genArgs()
-
-
-        return linear_extd
+    # def maxCallseq(self, callinfo: list, callee_lextd: list) -> list:
+    #     for callseq in callinfo:
+    #         pass
+    #     return callinfo[-1]
 
 class SegmentGraphSolver(GeneralPWCETSolver):
     # Generate concrete PWCETInterface object for pwcet estimate.
