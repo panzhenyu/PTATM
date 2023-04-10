@@ -16,7 +16,7 @@ Provide pwcet analysis service.
         positional argument     required    path to file includes parallel tasks.
         -w, --llc-wcar=         optional    use llc wcar to generate resource controller.
         -F, --force             optional    force to measure wcar for each task.
-        -o, --output=           optional    path to output directory to save control task as well as intermediate result, default is current dir.
+        -o, --output=           optional    path to save control task file.
 
         [input]
             [positional argument]
@@ -40,7 +40,6 @@ Provide pwcet analysis service.
 
         [output]
             stdout: none.
-            shared-control: shared resource controller.
 
         [note]
             We will save wcar result into the file provided by positional argument.
