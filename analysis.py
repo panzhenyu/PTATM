@@ -15,27 +15,35 @@ Provide pwcet analysis service.
     control     generate shared resource controller of taskset.
         positional argument     required    path to file includes parallel tasks.
         -w, --l3-wcar=          optional    use l3 wcar to generate resource controller.
-        -v, --verbose           optional    generate intermediate result.
-        -o, --output            optional    path to output directory to save control task as well as intermediate result, default is current dir.
+        -F, --force             optional    force to measure wcar for each task.
+        -o, --output=           optional    path to output directory to save control task as well as intermediate result, default is current dir.
 
         [input]
             [positional argument]
-                File format.
-                [dir]
-                    working directory
-                [cmd]
-                    command1
-                    command2
-                ...
+                File is in json format.
+                {
+                    "tasks": {
+                        "dir": working directory,
+                        "cmd": [
+                            "command1", 
+                            "command2", 
+                            ...
+                        ],
+                    },
+                    "wcar": {
+                        "command1": [wcar1, wcar2],
+                        ...
+                    }
+                }
             [l3-wcar]
                 An integer hints a cache set access occurs every ${l3-wcar} instructions.
-        
-        [verbose]
-            ${positional argument}-wcar.txt: wcar detail for each parallel task, each line is a task and its wcar.
 
         [output]
             stdout: none.
             shared-control: shared resource controller.
+
+        [note]
+            We will save wcar result into the file provided by positional argument.
 
     collect     collect trace for task.
         positional argument     ignored
@@ -94,7 +102,7 @@ Provide pwcet analysis service.
         positional argument     reuqired    path to segment info.
         -f, --func=             repeated    target functions(separated by ',' or provide multiple option) to generate, default is main only.
         -t, --evt-type=         optional    choose type of EVT family(GEV or GPD), default is GPD.
-        -r, --rebuild           optional    force to rebuild arguments of extreme distribution and expressions, even if they are already exist.
+        -F, --force             optional    force to rebuild arguments of extreme distribution and expressions, even if they are already exist.
         -p, --prob=             optional    exceedance probability, default is 1e-6.
         -v, --verbose           optional    generate pwcet curve of each function.
         -o, --output=           optional    path to output directory to save modified segment info and intermediate result, default is current dir.
@@ -108,7 +116,8 @@ Provide pwcet analysis service.
 
         [output]
             stdout: pwcet under exceedance probability(prob).
-            ${positional argument}-solve.json: File of segment information in json format, see PWCETGenerator/PWCETSolver.py for detail.
-
-
+        
+        [note]
+            We will save arguments of extreme distribution and expressions into the file provided 
+            by positional argument, see PWCETGenerator/PWCETSolver.py for detail.
 """
