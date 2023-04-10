@@ -111,53 +111,79 @@ if __name__ == "__main__":
 
     rawTrace =  """
         [/home/pzy/project/PTATM/benchmark/benchmark] [x86-tsc]
-        1631826845627326,main__0
-        1631826845810806,indirectCall__0
-        1631826845830378,foo__0
-        1631826845867320,foo__return
-        1631826845875878,indirectCall__return
-        1631826845884884,fib__0
-        1631826845902912,fib__0
-        1631826845920530,fib__return
-        1631826845928416,fib__0
-        1631826845945460,fib__return
-        1631826845953058,fib__return
-        1631826845962256,directCall__0
-        1631826845979722,directCall__return
-        1631826845988576,main__1
-        1631826846005320,indirectJump__0
-        1631826846023170,indirectJump__return
-        1631826846031658,indirectJump__0
-        1631826846048874,indirectJump__return
-        1631826846056758,fib__0
-        1631826846073830,fib__return
-        1631826846082004,indirectCall__0
-        1631826846099402,foo__0
-        1631826846116844,foo__return
-        1631826846124440,indirectCall__return
-        1631826846132324,main__return
+        6329108218566684,main__0
+        6329108218778830,indirectCall__0
+        6329108218800638,foo__0
+        6329108218841606,foo__return
+        6329108218850940,indirectCall__return
+        6329108218860826,fib__0
+        6329108218880910,fib__0
+        6329108218900720,fib__return
+        6329108218909540,fib__0
+        6329108218928630,fib__return
+        6329108218937104,fib__return
+        6329108218946876,directCall__0
+        6329108218967186,directCall__return
+        6329108218977098,main__1
+        6329108218996656,indirectJump__0
+        6329108219016572,indirectJump__return
+        6329108219026176,indirectJump__0
+        6329108219045506,indirectJump__return
+        6329108219054344,fib__0
+        6329108219073546,fib__return
+        6329108219082684,indirectCall__0
+        6329108219102290,foo__0
+        6329108219121818,foo__return
+        6329108219130310,indirectCall__return
+        6329108219139604,main__return
+        [/home/pzy/project/PTATM/benchmark/benchmark] [x86-tsc]
+        6329108476983538,main__0
+        6329108477195860,indirectCall__0
+        6329108477218248,foo__0
+        6329108477259682,foo__return
+        6329108477269836,indirectCall__return
+        6329108477280078,fib__0
+        6329108477300282,fib__0
+        6329108477319900,fib__return
+        6329108477328714,fib__0
+        6329108477347828,fib__return
+        6329108477356208,fib__return
+        6329108477366358,directCall__0
+        6329108477386622,directCall__return
+        6329108477396464,main__1
+        6329108477416248,indirectJump__0
+        6329108477437090,indirectJump__return
+        6329108477446594,indirectJump__0
+        6329108477465880,indirectJump__return
+        6329108477474800,fib__0
+        6329108477493956,fib__return
+        6329108477503072,indirectCall__0
+        6329108477522558,foo__0
+        6329108477542018,foo__return
+        6329108477550498,indirectCall__return
+        6329108477559886,main__return
     """
 
-    rawTrace =  """
-        [/home/pzy/project/PTATM/benchmark/benchmark] [x86-tsc]
-        1,main__0
-        2,main__1
-        3,foo__0
-        4,foo__return
-        5,recursive__0
-        6,recursive__1
-        7,foo__0
-        8,foo__return
-        9,recursive__0
-        10,recursive__1
-        11,func__0
-        12,func__return
-        13,recursive__return
-        14,recursive__return
-        15,main__2
-        16,main__2
-        17,main__return
-    """
+    # rawTrace =  """
+    #     [/home/pzy/project/PTATM/benchmark/benchmark] [x86-tsc]
+    #     1,main__0
+    #     2,main__1
+    #     3,foo__0
+    #     4,foo__return
+    #     5,recursive__0
+    #     6,recursive__1
+    #     7,foo__0
+    #     8,foo__return
+    #     9,recursive__0
+    #     10,recursive__1
+    #     11,func__0
+    #     12,func__return
+    #     13,recursive__return
+    #     14,recursive__return
+    #     15,main__2
+    #     16,main__2
+    #     17,main__return
+    # """
 
     traceObj = Trace()
     filler = RawTraceStringFiller(traceObj)
@@ -168,4 +194,4 @@ if __name__ == "__main__":
         # CostTimeStripper(traceObj).strip()
         # print(JsonTraceSerializer(4).serialize(traceObj))
         CalleeStripper(traceObj).strip()
-        print(JsonTraceSerializer(4).serialize(traceObj))
+        print(JsonTraceSerializer().serialize(traceObj))

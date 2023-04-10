@@ -5,6 +5,33 @@ from collections import Counter
 from CFG2Segment.Tool import GraphTool
 from SegmentInfoCollector import TraceTool
 
+"""
+    We generate symbolic trace with EVT tools like this:
+    {
+        "command": ["command"], 
+        "clock": "clock", 
+        "dump": {
+            "main": {
+                "main__0": {
+                    "normcost": {
+                        "time": [1], (main__1 - main__0)
+                        "pareto": dict of pareto args, 
+                        ...
+                    }, 
+                    "callinfo": []
+                },
+                ...
+                "fullcost": {
+                    "time": [8], (main__return - main__0),
+                    "pareto": dict of pareto args, 
+                    "expr": save expression for current function.
+                    ...
+                }
+            }, 
+            ...
+        }
+    }
+"""
 class GeneralPWCETSolver:
     def __init__(self, extd_generator: EVTTool.EVT, symtrace_tag: str):
         # Generator who use EVT to generate ExtremeDistribution object.

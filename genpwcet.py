@@ -21,30 +21,8 @@ symbolic timing analysis field(such as gumbel, pareto) into trace file.
     -o, --output    Output file to save result, default value: ${file}_pwcet.png for image mode and stdout for value mode.
     -p, --prob      Exceedance probability, ignored in image mode, default is 1e-6.
 
-    We generate symbolic trace with EVT tools like this:
-    {
-        "command": ["command"], 
-        "clock": "clock", 
-        "dump": {
-            "main": {
-                "main__0": {
-                    "normcost": {
-                        "time": [1], (main__1 - main__0)
-                        "pareto": dict of pareto args, 
-                        ...
-                    }, 
-                    "callinfo": []
-                },
-                ...
-                "fullcost": {
-                    "time": [8], (main__return - main__0),
-                    "pareto": dict of pareto args, 
-                    ...
-                }
-            }, 
-            ...
-        }
-    }
+    symbolic trace format: see PWCETGenerator/PWCETSolver.py for more detail.
+
 """
 
 # Plot sf, where sf = 1 - cdf.
@@ -58,6 +36,7 @@ def plot_isf(isf):
 if __name__ == "__main__":
     # Build trace object.
     tracestr = '{"command": ["/home/pzy/project/PTATM/benchmark/benchmark"], "clock": "x86-tsc", "dump": {"foo": {"fullcost": {"time": [1.0, 1.0]}, "foo__0": {"normcost": {"time": [1.0, 1.0]}, "callinfo": []}}, "func": {"fullcost": {"time": [1.0]}, "func__0": {"normcost": {"time": [1.0]}, "callinfo": []}}, "recursive": {"fullcost": {"time": [4.0, 9.0]}, "recursive__0": {"normcost": {"time": [2.0]}, "callinfo": []}, "recursive__1": {"normcost": {"time": [5.0]}, "callinfo": [["foo", "recursive", "func"]]}}, "main": {"fullcost": {"time": [16.0]}, "main__0": {"normcost": {"time": [1.0]}, "callinfo": []}, "main__1": {"normcost": {"time": [3.0]}, "callinfo": [["foo", "recursive"]]}, "main__2": {"normcost": {"time": [2.0]}, "callinfo": []}}}}'
+    tracestr = '{"command": ["/home/pzy/project/PTATM/benchmark/benchmark"], "clock": "x86-tsc", "dump": {"foo": {"fullcost": {"time": [40968.0, 19528.0, 41434.0, 19460.0]}, "foo__0": {"normcost": {"time": [40968.0, 19528.0, 41434.0, 19460.0]}, "callinfo": []}}, "indirectCall": {"fullcost": {"time": [72110.0, 47626.0, 73976.0, 47426.0]}, "indirectCall__0": {"normcost": {"time": [31142.0, 28098.0, 32542.0, 27966.0]}, "callinfo": [["foo"]]}}, "fib": {"fullcost": {"time": [19810.0, 19090.0, 76278.0, 19202.0, 19618.0, 19114.0, 76130.0, 19156.0]}, "fib__0": {"normcost": {"time": [76278.0, 19202.0, 76130.0, 19156.0]}, "callinfo": [["fib", "fib"]]}}, "directCall": {"fullcost": {"time": [20310.0, 20264.0]}, "directCall__0": {"normcost": {"time": [20310.0, 20264.0]}, "callinfo": []}}, "indirectJump": {"fullcost": {"time": [19916.0, 19330.0, 20842.0, 19286.0]}, "indirectJump__0": {"normcost": {"time": [19916.0, 19330.0, 20842.0, 19286.0]}, "callinfo": []}}, "main": {"fullcost": {"time": [572920.0, 576348.0]}, "main__0": {"normcost": {"time": [241716.0, 242556.0]}, "callinfo": [["indirectCall", "fib", "directCall"]]}, "main__1": {"normcost": {"time": [56432.0, 56712.0]}, "callinfo": [["indirectJump", "indirectJump", "fib", "indirectCall"]]}}}}'
     traceObj = TraceTool.Trace()
     TraceTool.JsonTraceFiller(traceObj).fill(tracestr)
     print(TraceTool.JsonTraceSerializer(2).serialize(traceObj))
@@ -72,6 +51,7 @@ if __name__ == "__main__":
         print("solve failed")
         print(solver.err_msg)
     else:
+        print(solver.func_expr['main'])
         print("expression: ", linear_extd.expression())
         probs = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9]
         pwcet = [linear_extd.isf(prob) for prob in probs]
