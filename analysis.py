@@ -14,7 +14,7 @@ Provide pwcet analysis service.
     
     control     generate shared resource controller of taskset.
         positional argument     required    path to file includes parallel tasks.
-        -w, --l3-wcar=          optional    use l3 wcar to generate resource controller.
+        -w, --llc-wcar=         optional    use llc wcar to generate resource controller.
         -F, --force             optional    force to measure wcar for each task.
         -o, --output=           optional    path to output directory to save control task as well as intermediate result, default is current dir.
 
@@ -30,13 +30,13 @@ Provide pwcet analysis service.
                             ...
                         ],
                     },
-                    "wcar": {
+                    "llc-wcar": {
                         "command1": [wcar1, wcar2],
                         ...
                     }
                 }
-            [l3-wcar]
-                An integer hints a cache set access occurs every ${l3-wcar} instructions.
+            [llc-wcar]
+                An integer hints a cache set access occurs every ${llc-wcar} instructions.
 
         [output]
             stdout: none.
