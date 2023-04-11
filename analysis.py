@@ -46,31 +46,34 @@ Provide pwcet analysis service.
 
     collect     collect trace for task.
         positional argument     ignored
-        -t, --task=             required    path to config of the task to collect, which contains contains binary file, probes and input vectors.
-        -C, --core-no=          repeated    core number(separated by ',' or provide multiple option) to place the task and shared resource control task.
-        -T, --control-task=     optional    path to shared resource control task.
+        -t, --task=             required    path to config of the target to collect and its contenders.
         -c, --clock=            optional    clock the tracer used, default is x86-tsc, see /sys/kernel/tracing/trace_clock.
         -r, --repeat=           optional    generate multiple trace information by repeating each input, default is 1.
-
-        [limit]
-            num of core-no must be greater than 0.
-            control-task is required if num of --core-no larger than 1.
         
         [input]
-            [task]
-                File format.
-                [binary]
-                    path to binary file
-                [probes]
-                    probes splited with ','
-                [inputs]
-                    input arguments1
-                    input arguments2
-                    ...
+            [positional argument]
+                File is in json format.
+                {
+                    "target": {
+                        "core": core number used by target,
+                        "task": [
+                            {
+                                "binary": path to binary file,
+                                "probes": [uprobe1, uprobe2, ...],
+                                "inputs": [arguments1, arguments2, ...]
+                            },
+                            other task to collect...
+                        ]
+                    },
+                    "contender": {
+                        "core": core number used by contender,
+                        "task": [command1, command2, ...]
+                    }
+                }
 
         [output]
             stdout: trace info, trace format:
-                [${command}]
+                [${binary} ${args}]
                 time1,uprobe1
                 ...
 
