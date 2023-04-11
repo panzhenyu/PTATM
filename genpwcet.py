@@ -22,7 +22,6 @@ symbolic timing analysis field(such as gumbel, pareto) into trace file.
     -p, --prob      Exceedance probability, ignored in image mode, default is 1e-6.
 
     symbolic trace format: see PWCETGenerator/PWCETSolver.py for more detail.
-
 """
 
 # Plot sf, where sf = 1 - cdf.

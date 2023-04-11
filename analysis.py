@@ -16,25 +16,19 @@ Provide pwcet analysis service.
         positional argument     required    path to file includes parallel tasks.
         -w, --llc-wcar=         optional    use llc wcar to generate resource controller.
         -F, --force             optional    force to measure wcar for each task.
-        -o, --output=           optional    path to save control task file.
+        -o, --output=           optional    path to save control task file, defualt is ./shared-controller
 
         [input]
             [positional argument]
                 File is in json format.
-                {
-                    "tasks": {
+                [
+                    {
                         "dir": working directory,
-                        "cmd": [
-                            "command1", 
-                            "command2", 
-                            ...
-                        ],
+                        "command": command,
+                        "llc-wcar": llc-wcar
                     },
-                    "llc-wcar": {
-                        "command1": [wcar1, wcar2],
-                        ...
-                    }
-                }
+                    other task...
+                ]
             [llc-wcar]
                 An integer hints a cache set access occurs every ${llc-wcar} instructions.
 
@@ -45,10 +39,9 @@ Provide pwcet analysis service.
             We will save wcar result into the file provided by positional argument.
 
     collect     collect trace for task.
-        positional argument     ignored
-        -t, --task=             required    path to config of the target to collect and its contenders.
+        positional argument     required    path to config of the target to collect and its contenders.
         -c, --clock=            optional    clock the tracer used, default is x86-tsc, see /sys/kernel/tracing/trace_clock.
-        -r, --repeat=           optional    generate multiple trace information by repeating each input, default is 1.
+        -r, --repeat=           optional    generate multiple trace information by repeating each input, default is 20.
         
         [input]
             [positional argument]
@@ -73,9 +66,9 @@ Provide pwcet analysis service.
 
         [output]
             stdout: trace info, trace format:
-                [${binary} ${args}]
-                time1,uprobe1
-                ...
+            [${binary} ${args}]
+            time1,uprobe1
+            ...
 
     seginfo     dump trace/seginfo, and generate a new seginfo.
         positional argument     ignored
