@@ -98,7 +98,7 @@ Provide pwcet analysis service.
         -f, --func=             repeated    target functions(separated by ',' or provide multiple option) to generate, default is main only.
         -t, --evt-type=         optional    choose type of EVT family(GEV or GPD), default is GPD.
         -F, --force             optional    force to rebuild arguments of extreme distribution and expressions, even if they are already exist.
-        -p, --prob=             optional    exceedance probability, default is 1e-6.
+        -p, --prob=             repeated    exceedance probability, default is 1e-6.
         -v, --verbose           optional    generate pwcet curve of each function.
         -o, --output=           optional    path to output directory to save modified segment info and intermediate result, default is current dir.
 
@@ -110,7 +110,11 @@ Provide pwcet analysis service.
             ${func}-pwcet.png: pwcet curve for ${func}.
 
         [output]
-            stdout: pwcet under exceedance probability(prob).
+            stdout: pwcet under exceedance probability(prob), format:
+            function,prob1,prob2,...
+            func1,pWCET11,pWCET12,...
+            func2,pWCET21,pWCET22,...
+            ...
         
         [note]
             We will save arguments of extreme distribution and expressions into the file provided 
