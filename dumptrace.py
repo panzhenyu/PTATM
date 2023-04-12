@@ -193,5 +193,5 @@ if __name__ == "__main__":
         print(filler.err_msg)
         # CostTimeStripper(traceObj).strip()
         # print(JsonTraceSerializer(4).serialize(traceObj))
-        CalleeStripper(traceObj).strip()
+        CallinfoStripper(traceObj).strip()
         print(JsonTraceSerializer().serialize(traceObj))

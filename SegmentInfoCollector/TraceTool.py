@@ -308,7 +308,7 @@ class CostTimeStripper(TraceStripper):
         return True
 
 # Shrink function list in KEY_CALLINFO to one max element.
-class CalleeStripper(TraceStripper):
+class CallinfoStripper(TraceStripper):
     def __init__(self, trace: Trace) -> None:
         super().__init__(trace)
 
