@@ -224,31 +224,31 @@ class EVT:
 
     # Returns none if fit faled, otherwise returns an ExtremeDistribution object. 
     @abstractmethod
-    def fit(self, raw_data: list[float]) -> ExtremeDistribution|None:
+    def fit(self, raw_data: list) -> ExtremeDistribution:
         # pick raw samples until we pass kpss,bds,lrd test -> pick extreme value & EVT fit until we pass cvm test.
         return None
 
     @abstractmethod
     # Generate ExtremeDistribution object with params.
-    def gen(self, params: dict) -> ExtremeDistribution|None:
+    def gen(self, params: dict) -> ExtremeDistribution:
         pass
 
     # Util.
     # Stationarity test for raw data.
-    def kpss(self, raw_data: list[float]):
+    def kpss(self, raw_data: list):
         return stattools.kpss(raw_data)
 
     # Independent and identically distributed test for raw data.
-    def bds(self, raw_data: list[float]):
+    def bds(self, raw_data: list):
         return stattools.bds(raw_data)
 
     # Long range dependence test.
-    def lrd(self, raw_data: list[float]):
+    def lrd(self, raw_data: list):
         # TODO: fill this function.
         pass
 
     # Test for goodness of fit of a cumulative distribution function.
-    def cvm(self, ext_data: list[float], ext_func):
+    def cvm(self, ext_data: list, ext_func):
         return cramervonmises(ext_data, ext_func.cdf)
 
 # Generate GEV distribution witl EVT tool.
@@ -260,7 +260,7 @@ class GEVGenerator(EVT):
         self.fix_c = fix_c
 
     @staticmethod
-    def BM(data: list[float], bs: int) -> list[float]:
+    def BM(data: list, bs: int) -> list:
         ext_vals, nr_sample = list(), len(data)
         for i in range(nr_sample//bs + 1):
             s = i * bs
@@ -270,7 +270,7 @@ class GEVGenerator(EVT):
             ext_vals.append(max(data[s:] if e > nr_sample else data[s:e]))
         return ext_vals
 
-    def fit(self, raw_data: list[float]) -> ExtremeDistribution|None:
+    def fit(self, raw_data: list) -> ExtremeDistribution:
         # Pick raw samples until we pass kpss,bds,lrd test -> pick extreme value & EVT fit until we pass cvm test.
         if len(raw_data) < GEVGenerator.MIN_NRSAMPLE:
             self.err_msg = "Too few samples[%d] to fit.\n" % len(raw_data)
@@ -292,7 +292,7 @@ class GEVGenerator(EVT):
             c, loc, scale = genextreme.fit(self.ext_data, f0=self.fix_c)
         return self.gen({ExtremeDistribution.PARAM_SHAPE: c, ExtremeDistribution.PARAM_LOC: loc, ExtremeDistribution.PARAM_SCALE: scale})
 
-    def gen(self, params: dict) -> ExtremeDistribution|None:
+    def gen(self, params: dict) -> ExtremeDistribution:
         if not ExtremeDistribution.validparam(params):
             return None
         return GEV(params)
@@ -306,7 +306,7 @@ class GPDGenerator(EVT):
         self.fix_c = fix_c
 
     @staticmethod
-    def POT(data: list[float], nr_ext: int) -> list[float]:
+    def POT(data: list, nr_ext: int) -> list:
         nr_sample = len(data)
         if nr_ext < 0 or nr_ext >= nr_sample:
             return data[:]
@@ -314,7 +314,7 @@ class GPDGenerator(EVT):
         data.sort()
         return data[-nr_ext:]
 
-    def fit(self, raw_data: list[float]) -> ExtremeDistribution|None:
+    def fit(self, raw_data: list) -> ExtremeDistribution:
         # Pick raw samples until we pass kpss,bds,lrd test -> pick extreme value & EVT fit until we pass cvm test.
         if len(raw_data) < GPDGenerator.MIN_NRSAMPLE:
             self.err_msg += "Too few samples[%d] to fit.\n" % len(raw_data)
@@ -335,7 +335,7 @@ class GPDGenerator(EVT):
             c, loc, scale = genpareto.fit(self.ext_data, f0=self.fix_c)
         return self.gen({ExtremeDistribution.PARAM_SHAPE: c, ExtremeDistribution.PARAM_LOC: loc, ExtremeDistribution.PARAM_SCALE: scale})
 
-    def gen(self, params: dict) -> ExtremeDistribution|None:
+    def gen(self, params: dict) -> ExtremeDistribution:
         if not ExtremeDistribution.validparam(params):
             return None
         return GPD(params)

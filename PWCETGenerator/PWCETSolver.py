@@ -174,7 +174,7 @@ class GumbelSegmentListSolver(SegmentListSolver):
         super().__init__(EVTTool.GumbelGenerator(), GumbelSegmentListSolver.COST_TAG, EVTTool.PositiveLinearGumbel)
 
 class ExponentialParetoSegmentListSolver(SegmentListSolver):
-    COST_TAG = "exponential pareto"
+    COST_TAG = "expon"
     def __init__(self):
         super().__init__(EVTTool.ExponentialParetoGenerator(), ExponentialParetoSegmentListSolver.COST_TAG, EVTTool.PositiveLinearExponentialPareto) 
 
