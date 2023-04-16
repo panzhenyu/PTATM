@@ -1,0 +1,9 @@
+[
+    {
+        "core": [
+            1
+        ],
+        "command": "/home/pzy/project/PTATM/benchmark/benchmark",
+        "llc-wcar": 1
+    }
+]

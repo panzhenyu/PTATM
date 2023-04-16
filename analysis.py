@@ -1,4 +1,5 @@
-import sys, argparse
+from functools import reduce
+import os, sys, json, random, traceback, argparse, subprocess
 
 helper = """
 Usage: python3 analysis.py command [options] ...
@@ -17,14 +18,14 @@ Provide pwcet analysis service.
         positional argument     required    path to file includes parallel tasks.
         -w, --llc-wcar=         optional    use llc wcar to generate resource controller.
         -F, --force             optional    force to measure wcar for each task.
-        -o, --output=           optional    path to save control task file, defualt is ./shared-controller
+        -o, --output=           optional    path to save control task file, defualt is ./shared_controller
 
         [input]
             [positional argument]
                 File is in json format.
                 [
                     {
-                        "dir": working directory,
+                        "core": core set used by task,
                         "command": command,
                         "llc-wcar": llc-wcar
                     },
@@ -49,7 +50,7 @@ Provide pwcet analysis service.
                 File is in json format.
                 {
                     "target": {
-                        "core": core number used by target,
+                        "core": core set used by target,
                         "task": [
                             {
                                 "binary": path to binary file,
@@ -60,7 +61,7 @@ Provide pwcet analysis service.
                         ]
                     },
                     "contender": {
-                        "core": core number used by contender,
+                        "core": core set used by contender,
                         "task": [command1, command2, ...]
                     }
                 }
@@ -122,72 +123,149 @@ Provide pwcet analysis service.
             by positional argument, see PWCETGenerator/PWCETSolver.py for detail.
 """
 
-PTATM_ROOT = '/home/pzy/project/PTATM'
+root = os.getenv('PTATM')
 
-def process_segment(args):
-    import angr
-    from functools import reduce
-    from CFG2Segment.CFGBase import CFG
-    from CFG2Segment.CFGRefactor import FunctionalCFGRefactor
-    from CFG2Segment.SFGBase import SFG
-    from CFG2Segment.SFGBuilder import FunctionalSFGBuilder
+def exec(shellcmd: str) -> bool:
+    return 0 == subprocess.run(shellcmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode
 
-    if not hasattr(args, 'function'):
-        args.function = ['main']
+def execWithResult(shellcmd: str):
+    return subprocess.run(shellcmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    binary = args.binary
-    functions = args.function
-    max_seg = args.max_seg
+def issudo() -> bool:
+    return os.getuid() == 0
 
-     # Parse binary with angr.
-    angr_project = angr.Project(binary, load_options={'auto_load_libs': False})
-    angr_cfg = angr_project.analyses.CFGFast()
+class SegmentModule:
+    @staticmethod
+    def genprobes(binary: str, functions: list, max_seg: int):
+        import angr
+        from CFG2Segment import CFGBase, CFGRefactor, SFGBase, SFGBuilder
 
-    # Refactor CFG.
-    cfg = CFG(angr_cfg)
-    cfg_refactor = FunctionalCFGRefactor()
-    refactor_result = cfg_refactor.refactor(cfg)
+        # Parse binary with angr.
+        angr_project = angr.Project(binary, load_options={'auto_load_libs': False})
+        angr_cfg = angr_project.analyses.CFGFast()
 
-    # Build SFG.
-    sfg = SFG(cfg)
-    sfg_builder = FunctionalSFGBuilder(max_seg, functions)
-    build_result = sfg_builder.build(sfg)
+        # Refactor CFG.
+        cfg = CFGBase.CFG(angr_cfg)
+        cfg_refactor = CFGRefactor.FunctionalCFGRefactor()
+        refactor_result = cfg_refactor.refactor(cfg)
 
-    probes = []
-    for name in functions:
-        segfunc = sfg.getSegmentFunc(name)
-        if segfunc is None:
-            continue
-        for segment in segfunc.segments:
-            offset = hex(segment.startpoint.addr - segfunc.addr)
-            probe_prefix = segment.name + "="
-            probe_suffix = segfunc.name + ("+" + offset if offset != "0x0" else '')
-            probes.append(probe_prefix + probe_suffix)
-        probes.append(segfunc.name + "=" + segfunc.name + r"%return")
+        # Build SFG.
+        sfg = SFGBase.SFG(cfg)
+        sfg_builder = SFGBuilder.FunctionalSFGBuilder(max_seg, functions)
+        build_result = sfg_builder.build(sfg)
 
-    # Output refactor result and build result to stderr?
-    # Output result to stdout.
-    print(reduce(lambda x, y: x + ',' + y, probes))
+        probes = []
+        for name in functions:
+            segfunc = sfg.getSegmentFunc(name)
+            if segfunc is None:
+                continue
+            for segment in segfunc.segments:
+                offset = hex(segment.startpoint.addr - segfunc.addr)
+                probe_prefix = segment.name + "="
+                probe_suffix = segfunc.name + ("+" + offset if offset != "0x0" else '')
+                probes.append(probe_prefix + probe_suffix)
+            probes.append(segfunc.name + "=" + segfunc.name + r"%return")
 
-def process_control(args):
-    import subprocess
+        # Output refactor result and build result to stderr?
+        return probes
 
-    taskconf = args.taskconf
-    force = args.force
-    output = args.output
-    print(taskconf, force, output)
-    if hasattr(args, 'llc_wcar'):
-        llc_wcar = args.llc_wcar
-        # subprocess.run("/home/pzy/project/PTATM/L3Contention")
+    @staticmethod
+    def service(args):
+        if not hasattr(args, 'function'):
+            args.function = ['main']
+        probes = SegmentModule.genprobes(args.binary, args.function, args.max_seg)
+        sys.stdout.write(reduce(lambda x, y: x + ',' + y, probes))
 
-def process_collect(args):
-    print("process collect")
+class ControlModule:
+    @staticmethod
+    def gencarsim(car, output):
+        nopstr = 'nop;' * max(0, car-6)
+        simsrc = root + '/L3Contention/CARSimulator.c'
+        cmd = 'gcc -DNOPSTR=\'"%s"\' -O1 -o %s %s' % (nopstr, output, simsrc)
+        return execWithResult(cmd)
 
-def process_seginfo(args):
-    print("process seginfo")
+    @staticmethod
+    def genwcar(command, cpuset: list):
+        randomizer = root + '/L3Contention/RandomizeBuddy'
+        profiler = root + '/L3Contention/profiler'
 
-def process_pwcet(args):
-    print("process pwcet")
+        tmpfile = '/tmp/PTATM-wcar.json'
+        target_plan = json.dumps({
+            'id': 'target',
+            'type': 'SAMPLE_ALL',
+            'task': command,
+            'rt': True, 
+            'pincpu': True,
+            'leader': 'CYCLES',
+            'period': 50000000,
+            'member': ['INSTRUCTIONS', 'LLC_REFERENCES']
+        })
+        perfcmd = 'sudo %s --output=%s --json-plan=\'%s\' --cpu=%%d' % (profiler, tmpfile, target_plan)
+
+        # Start collecting.
+        exec('rm ' + tmpfile)
+        for _ in range(15):
+            cpu = cpuset[random.randint(0, len(cpuset)-1)]
+            exec(randomizer)
+            result = execWithResult(perfcmd % cpu)
+
+        # Gen worst car.
+        wcar = -1
+        for data in json.loads(open(tmpfile, 'r').read()):
+            target = data['target']
+            ins, acc = int(target['INSTRUCTIONS']), int(target['LLC_REFERENCES'])
+            wcar = max(wcar, ins//acc)
+        return wcar
+
+    @staticmethod
+    def service(args):
+        if not issudo():
+            raise Exception("you should run as a sudoer.")
+        if hasattr(args, 'llc_wcar'):
+            llc_wcar = int(args.llc_wcar)
+        else:
+            CORE = 'core'
+            COMMAND = 'command'
+            LLC_WCAR = 'llc-wcar'
+            llc_wcar = -1
+
+            taskjson = json.loads(open(args.taskconf, 'r').read())
+            for task in taskjson:
+                if COMMAND not in task:
+                    continue
+                if args.force or LLC_WCAR not in task or int(task[LLC_WCAR]) < 0:
+                    coreset = [1] if CORE not in task else task[CORE]
+                    task_wcar = ControlModule.genwcar(task[COMMAND], coreset)
+                    task[LLC_WCAR] = int(task_wcar)
+                llc_wcar = max(llc_wcar, task[LLC_WCAR])
+            # Save llc_wcar result into args.taskconf
+            open(args.taskconf, 'w').write(json.dumps(taskjson, indent=4))
+
+        # Generate car simulator with llc_wcar.
+        if llc_wcar >= 0:
+            result = ControlModule.gencarsim(llc_wcar, args.output)
+            if 0 != result.returncode:
+                sys.stderr.write(result.stderr.decode('utf-8'))
+        else:
+            sys.stderr.write('llc_wcar[%d] is invalid\n' % llc_wcar)
+
+class CollectModule:
+    
+    @staticmethod
+    def service(args):
+        pass
+
+class SeginfoModule:
+    
+    @staticmethod
+    def service(args):
+        pass
+
+class PWCETModule:
+
+    @staticmethod
+    def service(args):
+        pass
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="pwcet analysis service.")
@@ -196,12 +274,6 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(title='command')
 
     # Add subcommand segment.
-    """
-    segment     parse binary file into segment.
-        positional argument     required    path to binary file.
-        -f, --function=         repeated    interested functions(separated by ',' or provide multiple option), default is main only.
-        -s, --max-seg=          optional    max segment num, default is 2.
-    """
     segment = subparsers.add_parser('segment', help='parse binary file into segment')
     segment.add_argument('binary', 
                          help='path to binary file')
@@ -209,16 +281,9 @@ if __name__ == "__main__":
                          help='function name, default is main only')
     segment.add_argument('-s', '--max-seg', metavar='', type=int, default=2, 
                          help='max segment num, default is 2')
-    segment.set_defaults(func=process_segment)
+    segment.set_defaults(func=SegmentModule.service)
 
     # Add subcommand control.
-    """
-    control     generate shared resource controller of taskset.
-    positional argument     required    path to file includes parallel tasks.
-    -w, --llc-wcar=         optional    use llc wcar to generate resource controller.
-    -F, --force             optional    force to measure wcar for each task.
-    -o, --output=           optional    path to save control task file, defualt is ./shared-controller
-    """
     control = subparsers.add_parser('control', help='generate shared resource controller of taskset')
     control.add_argument('taskconf', 
                          help="path to file who includes parallel tasks")
@@ -226,9 +291,9 @@ if __name__ == "__main__":
                          help='use llc wcar to generate resource controller')
     control.add_argument('-F', '--force', action='store_true', 
                          help='force to measure wcar for each task')
-    control.add_argument('-o', '--output', metavar='', default='./shared-controller', 
-                         help='path to save control task file, defualt is ./shared-controller')
-    control.set_defaults(func=process_control)
+    control.add_argument('-o', '--output', metavar='', default='./shared_controller', 
+                         help='path to save control task file, defualt is ./shared_controller')
+    control.set_defaults(func=ControlModule.service)
 
     # Add subcommand collect.
     """
@@ -238,7 +303,7 @@ if __name__ == "__main__":
     -r, --repeat=           optional    generate multiple trace information by repeating each input, default is 20.
     """
     collect = subparsers.add_parser('collect', help='collect trace for task')
-    collect.set_defaults(func=process_collect)
+    collect.set_defaults(func=CollectModule.service)
 
     # Add subcommand seginfo.
     """
@@ -249,7 +314,7 @@ if __name__ == "__main__":
     -m, --strip-mode=       repeated    choose time or callinfo or both to strip(separated by ',' or provide multiple option).
     """
     seginfo = subparsers.add_parser('seginfo', help='dump trace/seginfo, and generate a new seginfo')
-    seginfo.set_defaults(func=process_seginfo)
+    seginfo.set_defaults(func=SeginfoModule.service)
 
     # Add subcommand pwcet.
     """
@@ -263,7 +328,7 @@ if __name__ == "__main__":
     -o, --output=           optional    path to output directory to save modified segment info and intermediate result, default is current dir.
     """
     pwcet = subparsers.add_parser('pwcet', help='generate pwcet result, build arguments of extreme distribution for segment and expression for function')
-    pwcet.set_defaults(func=process_pwcet)
+    pwcet.set_defaults(func=PWCETModule.service)
 
     # Parse arguments.
     args = parser.parse_args()
@@ -272,4 +337,7 @@ if __name__ == "__main__":
     if not hasattr(args, 'func'):
         parser.print_help()
     else:
-        args.func(args)
+        try:
+            args.func(args)
+        except Exception as error:
+            print(traceback.print_exc())
