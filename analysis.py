@@ -122,18 +122,63 @@ Provide pwcet analysis service.
             by positional argument, see PWCETGenerator/PWCETSolver.py for detail.
 """
 
+PTATM_ROOT = '/home/pzy/project/PTATM'
+
 def process_segment(args):
-    print("process segment")
+    import angr
+    from functools import reduce
+    from CFG2Segment.CFGBase import CFG
+    from CFG2Segment.CFGRefactor import FunctionalCFGRefactor
+    from CFG2Segment.SFGBase import SFG
+    from CFG2Segment.SFGBuilder import FunctionalSFGBuilder
 
     if not hasattr(args, 'function'):
         args.function = ['main']
 
-    print(args.binary)
-    print(args.function)
-    print(args.max_seg)
+    binary = args.binary
+    functions = args.function
+    max_seg = args.max_seg
+
+     # Parse binary with angr.
+    angr_project = angr.Project(binary, load_options={'auto_load_libs': False})
+    angr_cfg = angr_project.analyses.CFGFast()
+
+    # Refactor CFG.
+    cfg = CFG(angr_cfg)
+    cfg_refactor = FunctionalCFGRefactor()
+    refactor_result = cfg_refactor.refactor(cfg)
+
+    # Build SFG.
+    sfg = SFG(cfg)
+    sfg_builder = FunctionalSFGBuilder(max_seg, functions)
+    build_result = sfg_builder.build(sfg)
+
+    probes = []
+    for name in functions:
+        segfunc = sfg.getSegmentFunc(name)
+        if segfunc is None:
+            continue
+        for segment in segfunc.segments:
+            offset = hex(segment.startpoint.addr - segfunc.addr)
+            probe_prefix = segment.name + "="
+            probe_suffix = segfunc.name + ("+" + offset if offset != "0x0" else '')
+            probes.append(probe_prefix + probe_suffix)
+        probes.append(segfunc.name + "=" + segfunc.name + r"%return")
+
+    # Output refactor result and build result to stderr?
+    # Output result to stdout.
+    print(reduce(lambda x, y: x + ',' + y, probes))
 
 def process_control(args):
-    print("process control")
+    import subprocess
+
+    taskconf = args.taskconf
+    force = args.force
+    output = args.output
+    print(taskconf, force, output)
+    if hasattr(args, 'llc_wcar'):
+        llc_wcar = args.llc_wcar
+        # subprocess.run("/home/pzy/project/PTATM/L3Contention")
 
 def process_collect(args):
     print("process collect")
@@ -158,9 +203,12 @@ if __name__ == "__main__":
         -s, --max-seg=          optional    max segment num, default is 2.
     """
     segment = subparsers.add_parser('segment', help='parse binary file into segment')
-    segment.add_argument('binary', type=str, help='path to binary file')
-    segment.add_argument('-f', '--function', metavar='', action='extend', default=argparse.SUPPRESS, nargs='+', help='function name, default is main only')
-    segment.add_argument('-s', '--max-seg', metavar='', type=int, default=2, help='max segment num, default is 2')
+    segment.add_argument('binary', 
+                         help='path to binary file')
+    segment.add_argument('-f', '--function', metavar='', action='extend', default=argparse.SUPPRESS, nargs='+', 
+                         help='function name, default is main only')
+    segment.add_argument('-s', '--max-seg', metavar='', type=int, default=2, 
+                         help='max segment num, default is 2')
     segment.set_defaults(func=process_segment)
 
     # Add subcommand control.
@@ -172,6 +220,14 @@ if __name__ == "__main__":
     -o, --output=           optional    path to save control task file, defualt is ./shared-controller
     """
     control = subparsers.add_parser('control', help='generate shared resource controller of taskset')
+    control.add_argument('taskconf', 
+                         help="path to file who includes parallel tasks")
+    control.add_argument('-w', '--llc-wcar', metavar='', type=int, default=argparse.SUPPRESS,
+                         help='use llc wcar to generate resource controller')
+    control.add_argument('-F', '--force', action='store_true', 
+                         help='force to measure wcar for each task')
+    control.add_argument('-o', '--output', metavar='', default='./shared-controller', 
+                         help='path to save control task file, defualt is ./shared-controller')
     control.set_defaults(func=process_control)
 
     # Add subcommand collect.
