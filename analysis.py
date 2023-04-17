@@ -1,5 +1,5 @@
 from functools import reduce
-import os, sys, json, random, traceback, argparse, subprocess
+import os, sys, json, signal, random, traceback, argparse, subprocess
 
 helper = """
 Usage: python3 analysis.py command [options] ...
@@ -8,17 +8,19 @@ Provide pwcet analysis service.
 [command]
     segment     parse binary file into segment.
         positional argument     required    path to binary file.
-        -f, --function=         repeated    interested functions(separated by ',' or provide multiple option), default is main only.
+        -f, --function=         repeated    interested functions, default is main only.
         -s, --max-seg=          optional    max segment num, default is 2.
 
         [output]
             stdout: probes separate by ','.
-    
+
     control     generate shared resource controller of taskset.
         positional argument     required    path to file includes parallel tasks.
         -w, --llc-wcar=         optional    use llc wcar to generate resource controller.
         -F, --force             optional    force to measure wcar for each task.
-        -o, --output=           optional    path to save control task file, defualt is ./shared_controller
+        -v, --verbose           optional    generate detail.
+        -o, --output=           required    path to save control task file.
+        
 
         [input]
             [positional argument]
@@ -32,7 +34,7 @@ Provide pwcet analysis service.
                     other task...
                 ]
             [llc-wcar]
-                An integer hints a cache set access occurs every ${llc-wcar} instructions.
+                An integer hints a cache access occurs every ${llc-wcar} instructions.
 
         [output]
             stdout: none.
@@ -42,8 +44,10 @@ Provide pwcet analysis service.
 
     collect     collect trace for task.
         positional argument     required    path to config of the target to collect and its contenders.
-        -c, --clock=            optional    clock the tracer used, default is global, see /sys/kernel/tracing/trace_clock.
+        -c, --clock=            optional    clock the tracer used, default is global, see man perf record.
         -r, --repeat=           optional    generate multiple trace information by repeating each input, default is 20.
+        -v, --verbose           optional    generate detail.
+        -o, --output=           required    path to save trace.
         
         [input]
             [positional argument]
@@ -74,9 +78,11 @@ Provide pwcet analysis service.
 
     seginfo     dump trace/seginfo, and generate a new seginfo.
         positional argument     ignored
-        -t, --trace-file=       repeated    path to trace file(separated by ',' or provide multiple option).
-        -s, --seginfo=          repeated    path to segment info(separated by ',' or provide multiple option).
-        -m, --strip-mode=       repeated    choose time or callinfo or both to strip(separated by ',' or provide multiple option).
+        -t, --trace-file=       repeated    path to trace file.
+        -s, --seginfo=          repeated    path to segment info.
+        -m, --strip-mode=       repeated    choose time or callinfo or both to strip.
+        -v, --verbose           optional    generate detail.
+        -o, --output=           required    path to save seginfo.
 
         [limit]
             num of trace-file sum num of seginfo must be grater than 0.
@@ -97,7 +103,7 @@ Provide pwcet analysis service.
 
     pwcet       generate pwcet result, build arguments of extreme distribution for segment and expression for function.
         positional argument     reuqired    path to segment info.
-        -f, --function=         repeated    target functions(separated by ',' or provide multiple option) to generate, default is main only.
+        -f, --function=         repeated    target functions to generate, default is main only.
         -t, --evt-type=         optional    choose type of EVT family(GEV or GPD), default is GPD.
         -F, --force             optional    force to rebuild arguments of extreme distribution and expressions, even if they are already exist.
         -p, --prob=             repeated    exceedance probability, default is 1e-6.
@@ -123,7 +129,7 @@ Provide pwcet analysis service.
             by positional argument, see PWCETGenerator/PWCETSolver.py for detail.
 """
 
-root = os.getenv('PTATM')
+root = os.getenv('PTATM', 'None')
 
 def exec(shellcmd: str) -> bool:
     return 0 == subprocess.run(shellcmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode
@@ -133,6 +139,12 @@ def execWithResult(shellcmd: str):
 
 def issudo() -> bool:
     return os.getuid() == 0
+
+def info(s: str):
+    sys.stdout.write('[INFO] ' + s + '\n')
+
+def warn(s: str):
+    sys.stdout.write('[WARN] ' + s + '\n')
 
 class SegmentModule:
     @staticmethod
@@ -177,77 +189,109 @@ class SegmentModule:
         sys.stdout.write(reduce(lambda x, y: x + ',' + y, probes))
 
 class ControlModule:
+    # MACRO for gencarsim.
+    NOP         = 'nop;'
+    SIMSRC      = root + '/L3Contention/CARSimulator.c'
+    SIMCMD      = 'gcc -DNOPSTR=\'"%s"\' -O1 -o %s %s'
+
+    # MACRO for genwcar.
+    RANDOMIZER  = root + '/L3Contention/RandomizeBuddy'
+    PROFILER    = root + '/L3Contention/profiler'
+    TMPFILE     = '/tmp/PTATM-wcar.json'
+    TARGETID    = 'target'
+    MODE        = 'SAMPLE_ALL'
+    INS         = 'INSTRUCTIONS'
+    LLC_ACC     = 'LLC_REFERENCES'
+    CYCLE       = 'CYCLES'
+    PERIOD      = 1000000000
+    PERFCMD     = '%s --output=%s --log=/dev/null --json-plan=\'%s\' --cpu=%%d'
+    REPEAT      = 1
+
+    # MACRO for service.
+    CORE        = 'core'
+    COMMAND     = 'command'
+    LLC_WCAR    = 'llc-wcar'
+
     @staticmethod
     def gencarsim(car, output):
-        nopstr = 'nop;' * max(0, car-6)
-        simsrc = root + '/L3Contention/CARSimulator.c'
-        cmd = 'gcc -DNOPSTR=\'"%s"\' -O1 -o %s %s' % (nopstr, output, simsrc)
+        nopstr = ControlModule.NOP * max(0, car-6)
+        cmd = ControlModule.SIMCMD % (nopstr, output, ControlModule.SIMSRC)
         return execWithResult(cmd)
 
     @staticmethod
     def genwcar(command, cpuset: list):
-        randomizer = root + '/L3Contention/RandomizeBuddy'
-        profiler = root + '/L3Contention/profiler'
-
-        tmpfile = '/tmp/PTATM-wcar.json'
         target_plan = json.dumps({
-            'id': 'target',
-            'type': 'SAMPLE_ALL',
+            'id': ControlModule.TARGETID,
+            'type': ControlModule.MODE,
             'task': command,
-            'rt': True, 
+            'rt': True,
             'pincpu': True,
-            'leader': 'CYCLES',
-            'period': 50000000,
-            'member': ['INSTRUCTIONS', 'LLC_REFERENCES']
+            'leader': ControlModule.CYCLE,
+            'period': ControlModule.PERIOD,
+            'member': [ControlModule.INS, ControlModule.LLC_ACC]
         })
-        perfcmd = 'sudo %s --output=%s --json-plan=\'%s\' --cpu=%%d' % (profiler, tmpfile, target_plan)
+        tmpfile = ControlModule.TMPFILE
+        pcmd = ControlModule.PERFCMD % (ControlModule.PROFILER, tmpfile, target_plan)
 
         # Start collecting.
-        exec('rm ' + tmpfile)
-        for _ in range(15):
+        if os.path.exists(tmpfile) and not exec('rm ' + tmpfile):
+            raise Exception("Cannot remove temp file[%s]." % tmpfile)
+
+        for _ in range(ControlModule.REPEAT):
             cpu = cpuset[random.randint(0, len(cpuset)-1)]
-            exec(randomizer)
-            result = execWithResult(perfcmd % cpu)
+            exec(ControlModule.RANDOMIZER)
+            exec(pcmd % cpu)
 
         # Gen worst car.
-        wcar = -1
+        wcar = None
         for data in json.loads(open(tmpfile, 'r').read()):
-            target = data['target']
-            ins, acc = int(target['INSTRUCTIONS']), int(target['LLC_REFERENCES'])
-            wcar = max(wcar, ins//acc)
+            target = data[ControlModule.TARGETID]
+            inslist, acclist = target[ControlModule.INS], target[ControlModule.LLC_ACC]
+            for i in range(min(len(inslist), len(acclist))):
+                car = int(inslist[i]) // int(acclist[i])
+                wcar = car if wcar is None else min(wcar, car)
         return wcar
 
     @staticmethod
     def service(args):
+        llc_wcar = None
+
         if not issudo():
-            raise Exception("you should run as a sudoer.")
+            raise Exception("You should run as a sudoer.")
+        
+        if os.path.exists(args.output):
+            raise Exception("Output[%s] is already exist." % args.output)
+
         if hasattr(args, 'llc_wcar'):
             llc_wcar = int(args.llc_wcar)
         else:
-            CORE = 'core'
-            COMMAND = 'command'
-            LLC_WCAR = 'llc-wcar'
-            llc_wcar = -1
-
             taskjson = json.loads(open(args.taskconf, 'r').read())
             for task in taskjson:
-                if COMMAND not in task:
+                if ControlModule.COMMAND not in task:
                     continue
-                if args.force or LLC_WCAR not in task or int(task[LLC_WCAR]) < 0:
-                    coreset = [1] if CORE not in task else task[CORE]
-                    task_wcar = ControlModule.genwcar(task[COMMAND], coreset)
-                    task[LLC_WCAR] = int(task_wcar)
-                llc_wcar = max(llc_wcar, task[LLC_WCAR])
+                # Collect wcar for each task.
+                if args.force or ControlModule.LLC_WCAR not in task or int(task[ControlModule.LLC_WCAR]) < 0:
+                    cmd = task[ControlModule.COMMAND]
+                    coreset = [1] if ControlModule.CORE not in task else task[ControlModule.CORE]
+                    task_wcar = ControlModule.genwcar(cmd, coreset)
+                    task[ControlModule.LLC_WCAR] = task_wcar
+                    if args.verbose:
+                        info('Collect task[%s] done with wcar[%d].' % (cmd, task_wcar))
+                task_wcar = task[ControlModule.LLC_WCAR]
+                llc_wcar = task_wcar if llc_wcar is None else min(llc_wcar, task_wcar)
             # Save llc_wcar result into args.taskconf
+            if args.verbose:
+                info('Save wcar result into taskconf[%s].' % (args.taskconf))
             open(args.taskconf, 'w').write(json.dumps(taskjson, indent=4))
 
         # Generate car simulator with llc_wcar.
-        if llc_wcar >= 0:
+        if llc_wcar is not None:
+            info("Generate control task at output[%s]." % args.output)
             result = ControlModule.gencarsim(llc_wcar, args.output)
             if 0 != result.returncode:
-                sys.stderr.write(result.stderr.decode('utf-8'))
+                raise Exception(result.stderr.decode('utf-8'))
         else:
-            sys.stderr.write('llc_wcar[%d] is invalid\n' % llc_wcar)
+            raise Exception("Invalid llc_wcar[None].")
 
 class CollectModule:
     
@@ -291,8 +335,10 @@ if __name__ == "__main__":
                          help='use llc wcar to generate resource controller')
     control.add_argument('-F', '--force', action='store_true', 
                          help='force to measure wcar for each task')
-    control.add_argument('-o', '--output', metavar='', default='./shared_controller', 
-                         help='path to save control task file, defualt is ./shared_controller')
+    control.add_argument('-v', '--verbose', action='store_true', 
+                         help='generate detail')
+    control.add_argument('-o', '--output', metavar='', required=True, 
+                         help='path to save control task file')
     control.set_defaults(func=ControlModule.service)
 
     # Add subcommand collect.
@@ -309,9 +355,9 @@ if __name__ == "__main__":
     """
     seginfo     dump trace/seginfo, and generate a new seginfo.
     positional argument     ignored
-    -t, --trace-file=       repeated    path to trace file(separated by ',' or provide multiple option).
-    -s, --seginfo=          repeated    path to segment info(separated by ',' or provide multiple option).
-    -m, --strip-mode=       repeated    choose time or callinfo or both to strip(separated by ',' or provide multiple option).
+    -t, --trace-file=       repeated    path to trace file.
+    -s, --seginfo=          repeated    path to segment info.
+    -m, --strip-mode=       repeated    choose time or callinfo or both to strip.
     """
     seginfo = subparsers.add_parser('seginfo', help='dump trace/seginfo, and generate a new seginfo')
     seginfo.set_defaults(func=SeginfoModule.service)
@@ -320,7 +366,7 @@ if __name__ == "__main__":
     """
     pwcet       generate pwcet result, build arguments of extreme distribution for segment and expression for function.
     positional argument     reuqired    path to segment info.
-    -f, --function=         repeated    target functions(separated by ',' or provide multiple option) to generate, default is main only.
+    -f, --function=         repeated    target functions to generate, default is main only.
     -t, --evt-type=         optional    choose type of EVT family(GEV or GPD), default is GPD.
     -F, --force             optional    force to rebuild arguments of extreme distribution and expressions, even if they are already exist.
     -p, --prob=             repeated    exceedance probability, default is 1e-6.
@@ -330,14 +376,16 @@ if __name__ == "__main__":
     pwcet = subparsers.add_parser('pwcet', help='generate pwcet result, build arguments of extreme distribution for segment and expression for function')
     pwcet.set_defaults(func=PWCETModule.service)
 
-    # Parse arguments.
-    args = parser.parse_args()
-
-    # Process subcommands.
-    if not hasattr(args, 'func'):
-        parser.print_help()
-    else:
-        try:
+    try:
+        # Check env.
+        if os.getenv('PTATM') is None:
+            raise Exception("Set PTATM env with shrc at first.")
+        # Parse arguments.
+        args = parser.parse_args()
+        # Process subcommands.
+        if not hasattr(args, 'func'):
+            parser.print_help()
+        else:
             args.func(args)
-        except Exception as error:
-            print(traceback.print_exc())
+    except Exception as error:
+        print(traceback.print_exc())

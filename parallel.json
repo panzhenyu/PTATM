@@ -4,6 +4,13 @@
             1
         ],
         "command": "/home/pzy/project/PTATM/benchmark/benchmark",
-        "llc-wcar": 1
+        "llc-wcar": 22
+    },
+    {
+        "core": [
+            1
+        ],
+        "command": "/usr/local/software/spec2006/benchspec/CPU2006/403.gcc/run/run_base_ref_amd64-m64-gcc42-nn.0000/gcc_base.amd64-m64-gcc42-nn /usr/local/software/spec2006/benchspec/CPU2006/403.gcc/run/run_base_ref_amd64-m64-gcc42-nn.0000/s04.i -o /usr/local/software/spec2006/benchspec/CPU2006/403.gcc/run/run_base_ref_amd64-m64-gcc42-nn.0000/s04.s",
+        "llc-wcar": 8
     }
 ]
