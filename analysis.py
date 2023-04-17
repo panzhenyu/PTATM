@@ -1,5 +1,5 @@
 from functools import reduce
-import os, sys, json, signal, random, traceback, argparse, subprocess
+import os, sys, math, json, signal, random, traceback, argparse, subprocess, threading
 
 helper = """
 Usage: python3 analysis.py command [options] ...
@@ -28,7 +28,8 @@ Provide pwcet analysis service.
                 [
                     {
                         "core": core set used by task,
-                        "command": command,
+                        "dir": working directory,
+                        "cmd": command,
                         "llc-wcar": llc-wcar
                     },
                     other task...
@@ -48,7 +49,7 @@ Provide pwcet analysis service.
         -r, --repeat=           optional    generate multiple trace information by repeating each input, default is 20.
         -v, --verbose           optional    generate detail.
         -o, --output=           required    path to save trace.
-        
+
         [input]
             [positional argument]
                 File is in json format.
@@ -57,6 +58,7 @@ Provide pwcet analysis service.
                         "core": core set used by target,
                         "task": [
                             {
+                                "dir": working directory,
                                 "binary": path to binary file,
                                 "probes": [uprobe1, uprobe2, ...],
                                 "inputs": [arguments1, arguments2, ...]
@@ -66,12 +68,18 @@ Provide pwcet analysis service.
                     },
                     "contender": {
                         "core": core set used by contender,
-                        "task": [command1, command2, ...]
+                        "task": [
+                            {
+                                "dir": working directory, 
+                                "cmd": command1
+                            },
+                            other contender...
+                        ]
                     }
                 }
 
         [output]
-            stdout: trace info, trace format:
+            trace: trace information in text format.
             [${binary} ${args}]
             time1,uprobe1
             ...
@@ -99,7 +107,7 @@ Provide pwcet analysis service.
                 Strip callinfo will make an unique callinfo list for seginfo file.
 
         [output]
-            stdout: segment information in json format, see SegmentInforCollector/TraceTool.py for detail.
+            seginfo: segment information in json format, see SegmentInforCollector/TraceTool.py for detail.
 
     pwcet       generate pwcet result, build arguments of extreme distribution for segment and expression for function.
         positional argument     reuqired    path to segment info.
@@ -203,13 +211,14 @@ class ControlModule:
     INS         = 'INSTRUCTIONS'
     LLC_ACC     = 'LLC_REFERENCES'
     CYCLE       = 'CYCLES'
-    PERIOD      = 1000000000
+    PERIOD      = 5000000000
     PERFCMD     = '%s --output=%s --log=/dev/null --json-plan=\'%s\' --cpu=%%d'
     REPEAT      = 1
 
     # MACRO for service.
     CORE        = 'core'
-    COMMAND     = 'command'
+    DIR         = 'dir'
+    CMD         = 'cmd'
     LLC_WCAR    = 'llc-wcar'
 
     @staticmethod
@@ -248,7 +257,7 @@ class ControlModule:
             target = data[ControlModule.TARGETID]
             inslist, acclist = target[ControlModule.INS], target[ControlModule.LLC_ACC]
             for i in range(min(len(inslist), len(acclist))):
-                car = int(inslist[i]) // int(acclist[i])
+                car = math.ceil(int(inslist[i]) / int(acclist[i]))
                 wcar = car if wcar is None else min(wcar, car)
         return wcar
 
@@ -267,18 +276,26 @@ class ControlModule:
         else:
             taskjson = json.loads(open(args.taskconf, 'r').read())
             for task in taskjson:
-                if ControlModule.COMMAND not in task:
-                    continue
                 # Collect wcar for each task.
                 if args.force or ControlModule.LLC_WCAR not in task or int(task[ControlModule.LLC_WCAR]) < 0:
-                    cmd = task[ControlModule.COMMAND]
-                    coreset = [1] if ControlModule.CORE not in task else task[ControlModule.CORE]
-                    task_wcar = ControlModule.genwcar(cmd, coreset)
+                    # Get necessary fields from config.
+                    core = task[ControlModule.CORE]
+                    wdir = task[ControlModule.DIR]
+                    cmd = task[ControlModule.CMD]
+
+                    # Collect wcar for current task.
+                    pwd = os.getcwd()
+                    os.chdir(wdir)
+                    task_wcar = ControlModule.genwcar(cmd, core)
+                    os.chdir(pwd)
+
+                    # Save wcar into json opbject.
                     task[ControlModule.LLC_WCAR] = task_wcar
                     if args.verbose:
                         info('Collect task[%s] done with wcar[%d].' % (cmd, task_wcar))
                 task_wcar = task[ControlModule.LLC_WCAR]
                 llc_wcar = task_wcar if llc_wcar is None else min(llc_wcar, task_wcar)
+
             # Save llc_wcar result into args.taskconf
             if args.verbose:
                 info('Save wcar result into taskconf[%s].' % (args.taskconf))
@@ -294,10 +311,85 @@ class ControlModule:
             raise Exception("Invalid llc_wcar[None].")
 
 class CollectModule:
-    
+    # MACRO for service.
+    TARGET      = 'target'
+    CONTENDER   = 'contender'
+    CORE        = 'core'
+    TASK        = 'task'
+    DIR         = 'dir'
+    BINARY      = 'binary'
+    PROBES      = 'probes'
+    INPUTS      = 'inputs'
+    CMD         = 'cmd'
+
+    def gentrace(binary: str, command: str, uprobes: list, clock: str):
+        from SegmentInforCollector.Collector import TraceCollector
+
+        # Del all uprobes.
+        if not TraceCollector.delprobe(TraceCollector.PROBE_ALL):
+            raise Exception("Cannot del all uprobe[%s]." % TraceCollector.PROBE_ALL)
+            
+        # Add uprobes.
+        for uprobe in uprobes:
+            if not TraceCollector.addprobe(binary, TraceCollector.PROBE_PREFIX + uprobe):
+                raise Exception("Failed to add uprobe[%s]." % uprobe)
+
+        # Start collect.
+        result = TraceCollector.collectTrace(command)
+
+        # Clean all uprobes.
+        TraceCollector.delprobe(PROBE_ALL)
+
+        return result
+
+    def compete(contender: dict):
+        pass
+
     @staticmethod
     def service(args):
-        pass
+        taskconf = args.taskconf
+        clock = args.clock
+        repeat = args.repeat
+        verbose = args.verbose
+        output = args.output
+        """
+        {
+            "target": {
+                "core": core set used by target,
+                "task": [
+                    {
+                        "dir": working directory,
+                        "binary": path to binary file,
+                        "probes": [uprobe1, uprobe2, ...],
+                        "inputs": [arguments1, arguments2, ...]
+                    },
+                    other task to collect...
+                ]
+            },
+            "contender": {
+                "core": core set used by contender,
+                "task": [
+                    {
+                        "dir": working directory, 
+                        "cmd": command1
+                    },
+                    other contender...
+                ]
+            }
+        }
+        """
+        if not issudo():
+            raise Exception("You should run as a sudoer.")
+        
+        if os.path.exists(args.output):
+            raise Exception("Output[%s] is already exist." % args.output)
+        
+        taskjson = json.loads(open(args.taskconf, 'r').read())
+        target, contender = taskjson[CollectModule.TARGET], taskjson[CollectModule.CONTENDER]
+        
+        # Start contender.
+        t_contender = threading.threading(target=compete, args=(contender,))
+        t_contender.start()
 
 class SeginfoModule:
     
@@ -342,13 +434,17 @@ if __name__ == "__main__":
     control.set_defaults(func=ControlModule.service)
 
     # Add subcommand collect.
-    """
-    collect     collect trace for task.
-    positional argument     required    path to config of the target to collect and its contenders.
-    -c, --clock=            optional    clock the tracer used, default is global, see /sys/kernel/tracing/trace_clock.
-    -r, --repeat=           optional    generate multiple trace information by repeating each input, default is 20.
-    """
     collect = subparsers.add_parser('collect', help='collect trace for task')
+    collect.add_argument('taskconf', 
+                         help="path to config of the target to collect and its contenders")
+    collect.add_argument('-c', '--clock', metavar='', default='global', 
+                         help='clock the tracer used, default is global, see man perf record')
+    collect.add_argument('-r', '--repeat', metavar='', type=int, default=100, 
+                         help='generate multiple trace information by repeating each input, default is 20')
+    collect.add_argument('-v', '--verbose', action='store_true', 
+                         help='generate detail')
+    collect.add_argument('-o', '--output', metavar='', required=True, 
+                         help='path to save trace')
     collect.set_defaults(func=CollectModule.service)
 
     # Add subcommand seginfo.
