@@ -86,8 +86,8 @@ Provide pwcet analysis service.
 
     seginfo     dump trace/seginfo, and generate a new seginfo.
         positional argument     ignored
-        -t, --trace-file=       repeated    path to trace file.
-        -s, --seginfo=          repeated    path to segment info.
+        -t, --raw-trace=        repeated    path to raw trace file.
+        -s, --json-trace=       repeated    path to json trace file(segment info).
         -m, --strip-mode=       repeated    choose time or callinfo or both to strip.
         -v, --verbose           optional    generate detail.
         -o, --output=           required    path to save seginfo.
@@ -138,7 +138,6 @@ Provide pwcet analysis service.
 """
 
 root = os.getenv('PTATM', 'None')
-childproc = set()
 
 def exec(shellcmd: str) -> bool:
     return 0 == subprocess.run(shellcmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode
@@ -253,7 +252,8 @@ class ControlModule:
         for _ in range(ControlModule.REPEAT):
             cpu = cpuset[random.randint(0, len(cpuset)-1)]
             exec(ControlModule.RANDOMIZER)
-            exec(pcmd % cpu)
+            if not exec(pcmd % cpu):
+                raise Exception('Failed to exec [%s] on core[%d]' % (pcmd, cpu))
 
         # Gen worst car.
         wcar = None
@@ -268,6 +268,19 @@ class ControlModule:
         return wcar
 
     @staticmethod
+    def checkconf(conf: dict):
+        for task in conf:
+            for core in task[ControlModule.CORE]:
+                if not isinstance(core, int) or core >= multiprocessing.cpu_count() or core < 0:
+                    raise Exception("Invalid core[%d]." % core)
+            if not isinstance(task[ControlModule.DIR], str):
+                raise Exception("Invalid dir[%s]." % task[ControlModule.DIR])
+            if not isinstance(task[ControlModule.CMD], str):
+                raise Exception("Invalid cmd[%s]." % task[ControlModule.DIR])
+            if not isinstance(task.get(ControlModule.LLC_WCAR, -1), int):
+                raise Exception("Invalid llc-wcar[%s]." % task[ControlModule.LLC_WCAR])
+
+    @staticmethod
     def service(args):
         llc_wcar = None
 
@@ -278,34 +291,36 @@ class ControlModule:
             raise Exception('Output[%s] is already exist.' % args.output)
 
         if hasattr(args, 'llc_wcar'):
-            llc_wcar = int(args.llc_wcar)
+            llc_wcar = args.llc_wcar
         else:
             taskjson = json.loads(open(args.taskconf, 'r').read())
-            for task in taskjson:
-                # Collect wcar for each task.
-                if args.force or ControlModule.LLC_WCAR not in task or int(task[ControlModule.LLC_WCAR]) < 0:
-                    # Get necessary fields from config.
-                    core = task[ControlModule.CORE]
-                    wdir = task[ControlModule.DIR]
-                    cmd = task[ControlModule.CMD]
-
-                    # Collect wcar for current task.
-                    pwd = os.getcwd()
-                    os.chdir(wdir)
-                    task_wcar = ControlModule.genwcar(cmd, core)
-                    os.chdir(pwd)
-
-                    # Save wcar into json opbject.
-                    task[ControlModule.LLC_WCAR] = task_wcar
-                    if args.verbose:
-                        info('Collect task[%s] done with wcar[%d].' % (cmd, task_wcar))
-                task_wcar = task[ControlModule.LLC_WCAR]
-                llc_wcar = task_wcar if llc_wcar is None else min(llc_wcar, task_wcar)
-
-            # Save llc_wcar result into args.taskconf
-            if args.verbose:
-                info('Save wcar result into taskconf[%s].' % (args.taskconf))
-            open(args.taskconf, 'w').write(json.dumps(taskjson, indent=4))
+            ControlModule.checkconf(taskjson)
+            try:
+                for task in taskjson:
+                    # Collect wcar for each task.
+                    if args.force or int(task.get(ControlModule.LLC_WCAR, -1)) < 0:
+                        # Get necessary fields from config.
+                        core = task[ControlModule.CORE]
+                        wdir = task[ControlModule.DIR]
+                        cmd = task[ControlModule.CMD]
+                        # Collect wcar for current task.
+                        pwd = os.getcwd()
+                        os.chdir(wdir)
+                        task_wcar = ControlModule.genwcar(cmd, core)
+                        os.chdir(pwd)
+                        # Save wcar into json opbject.
+                        task[ControlModule.LLC_WCAR] = task_wcar
+                        if args.verbose:
+                            info('Collect task[%s] done with wcar[%d].' % (cmd, task_wcar))
+                    task_wcar = task[ControlModule.LLC_WCAR]
+                    llc_wcar = task_wcar if llc_wcar is None else min(llc_wcar, task_wcar)
+                # Save llc_wcar result into args.taskconf
+                if args.verbose:
+                    info('Save wcar result into taskconf[%s].' % (args.taskconf))
+            except Exception as error:
+                raise error
+            finally:
+                open(args.taskconf, 'w').write(json.dumps(taskjson, indent=4))
 
         # Generate car simulator with llc_wcar.
         if llc_wcar is not None:
@@ -328,100 +343,127 @@ class CollectModule:
     INPUTS      = 'inputs'
     CMD         = 'cmd'
 
+    @staticmethod
     def gentrace(binary: str, command: str, uprobes: list, clock: str):
         from SegmentInfoCollector.Collector import TraceCollector
 
         # Del all uprobes.
-        if not TraceCollector.delprobe(TraceCollector.PROBE_ALL):
-            raise Exception('Cannot del all uprobe[%s].' % TraceCollector.PROBE_ALL)
-            
-        # Add uprobes.
-        for uprobe in uprobes:
-            if not TraceCollector.addprobe(binary, TraceCollector.PROBE_PREFIX + uprobe):
-                raise Exception('Failed to add uprobe[%s].' % uprobe)
-
-        # Start collect.
-        result = TraceCollector.collectTrace(command)
-
-        # Clean all uprobes.
         TraceCollector.delprobe(TraceCollector.PROBE_ALL)
-
-        return result
+        try:
+            # Add uprobes.
+            for uprobe in uprobes:
+                if not TraceCollector.addprobe(binary, TraceCollector.PROBE_PREFIX + uprobe):
+                    raise Exception('Failed to add uprobe[%s] for binary[%s].' % (uprobe, binary))
+            # Start collect.
+            ok, info = TraceCollector.collectTrace(command, clock)
+            if not ok:
+                raise Exception('Failed to collect info for command[%s] with clock[%s].\n%s' % (command, clock, info))
+        except Exception as error:
+            raise error
+        finally:
+            # Clean all uprobes.
+            TraceCollector.delprobe(TraceCollector.PROBE_ALL)
+        return info
 
     @staticmethod
-    def compete(contender: dict, core):
+    def compete(contender: dict, core: int):
+        os.setpgid(0, 0)
+        def handler(x, y):
+            os.killpg(os.getpgid(0), signal.SIGKILL)
+        signal.signal(signal.SIGTERM, handler)
+
         contenders, nr_contender = contender[CollectModule.TASK], len(contender[CollectModule.TASK])
         gencmd = lambda task: 'cd %s && taskset -c %d %s' % (task[CollectModule.DIR], core, task[CollectModule.CMD])
         while True:
             contender_id = random.randint(0, nr_contender-1)
-            exec(gencmd(contenders[contender_id]))
+            proc = execWithProcess(gencmd(contenders[contender_id]))
+            proc.wait()
+
+    @staticmethod
+    def checkconf(conf: dict):
+        target = conf[CollectModule.TARGET]
+        # Check target.
+        for core in target[CollectModule.CORE]:
+            if not isinstance(core, int) or core >= multiprocessing.cpu_count() or core < 0:
+                raise Exception('Invalid core[%d].' % core)
+        for task in target[CollectModule.TASK]:
+            # Check dir.
+            if not isinstance(task[CollectModule.DIR], str):
+                raise Exception('Invalid dir[%s].' % task[CollectModule.DIR])
+            # Check binary.
+            if not isinstance(task[CollectModule.BINARY], str):
+                raise Exception('Invalid binary[%s].' % task[CollectModule.BINARY])
+            # Check probes.
+            for uprobe in task[CollectModule.PROBES]:
+                if not isinstance(uprobe, str):
+                    raise Exception('Invalid uprobe[%s].' % uprobe)
+            # Check inputs:
+            for in_vec in task[CollectModule.INPUTS]:
+                if not isinstance(in_vec, str):
+                    raise Exception('Invalid input[%s].' % in_vec)
+
+        # Check contender.
+        contender = conf[CollectModule.CONTENDER]
+        for core in contender[CollectModule.CORE]:
+            if not isinstance(core, int) or core >= multiprocessing.cpu_count() or core < 0:
+                raise Exception('Invalid core[%d].' % core)
+        for task in contender[CollectModule.TASK]:
+            # Check dir.
+            if not isinstance(task[CollectModule.DIR], str):
+                raise Exception('Invalid dir[%s].' % task[CollectModule.DIR])
+            # Check cmd.
+            if not isinstance(task[CollectModule.CMD], str):
+                raise Exception('Invalid cmd[%s].' % task[CollectModule.CMD])
 
     @staticmethod
     def service(args):
-        """
-        {
-            "target": {
-                "core": core set used by target,
-                "task": [
-                    {
-                        "dir": working directory,
-                        "binary": path to binary file,
-                        "probes": [uprobe1, uprobe2, ...],
-                        "inputs": [arguments1, arguments2, ...]
-                    },
-                    other task to collect...
-                ]
-            },
-            "contender": {
-                "core": core set used by contender,
-                "task": [
-                    {
-                        "dir": working directory, 
-                        "cmd": command1
-                    },
-                    other contender...
-                ]
-            }
-        }
-        """
         if not issudo():
             raise Exception('You should run as a sudoer.')
-        
-        if os.path.exists(args.output):
-            raise Exception('Output[%s] is already exist.' % args.output)
-        
+
         taskjson = json.loads(open(args.taskconf, 'r').read())
+        CollectModule.checkconf(taskjson)
         target, contender = taskjson[CollectModule.TARGET], taskjson[CollectModule.CONTENDER]
-        
+
         # Start contender at each core.
-        contender_coreset = contender[CollectModule.CORE]
         contender_procset = set()
-        for core in contender_coreset:
+        for core in contender[CollectModule.CORE]:
             if args.verbose:
                 info('Start contender at core %d.' % core)
             contender_procset.add(multiprocessing.Process(target=CollectModule.compete, args=(contender, core)))
-        childproc.update(contender_procset)
         for proc in contender_procset:
             proc.start()
-
-        # Collect tarce for each target.
-        # target_coreset = target[CollectModule.CORE]
-        # outfile = open(args.output, 'w')
-        # for task in target[CollectModule.TASK]:
-        #     taskdir = task[CollectModule.DIR]
-        #     binary = task[CollectModule.BINARY]
-        #     uprobes = task[CollectModule.PROBES]
-        #     inputs = task[CollectModule.INPUTS]
-        #     for _ in range(args.repeat):
-        #         traceinfo = CollectModule.gentrace(binary, command, uprobes, args.clock)
-        #         outfile.write(traceinfo + '\n')
-        #         outfile.flush()
-        # outfile.close()
-
-        # Terminate all contender.
-        for proc in contender_procset:
-            proc.terminate()
-            childproc.remove(proc)
+        try:
+            # Collect tarce for each target.
+            target_coreset = target[CollectModule.CORE]
+            outfile = open(args.output, 'a')
+            pwd = os.getcwd()
+            for task in target[CollectModule.TASK]:
+                taskdir = task[CollectModule.DIR]
+                binary = task[CollectModule.BINARY]
+                uprobes = task[CollectModule.PROBES]
+                inputs = task[CollectModule.INPUTS]
+                cmdpat = 'taskset -c %%d %s %%s' % binary
+                # Change working directory for collect.
+                os.chdir(taskdir)
+                for r in range(args.repeat):
+                    for in_vec in inputs:
+                        core = target_coreset[random.randint(0, len(target_coreset)-1)]
+                        command = cmdpat % (core, in_vec)
+                        if args.verbose:
+                            info('Collect for command[%s] at %d time.' % (command, r+1))
+                        traceinfo = CollectModule.gentrace(binary, command, uprobes, args.clock)
+                        outfile.write('\n[%s]\n'%command + traceinfo)
+                        outfile.flush()
+        except Exception as error:
+            raise error
+        finally:
+            os.chdir(pwd)
+            # Terminate all alive contender.
+            for proc in contender_procset:
+                if proc.is_alive():
+                    proc.terminate()
+            # Close output.
+            outfile.close()
 
 class SeginfoModule:
     
@@ -471,7 +513,7 @@ if __name__ == "__main__":
                          help="path to config of the target to collect and its contenders")
     collect.add_argument('-c', '--clock', metavar='', default='global', 
                          help='clock the tracer used, default is global, see man perf record')
-    collect.add_argument('-r', '--repeat', metavar='', type=int, default=100, 
+    collect.add_argument('-r', '--repeat', metavar='', type=int, default=20, 
                          help='generate multiple trace information by repeating each input, default is 20')
     collect.add_argument('-v', '--verbose', action='store_true', 
                          help='generate detail')
@@ -480,14 +522,18 @@ if __name__ == "__main__":
     collect.set_defaults(func=CollectModule.service)
 
     # Add subcommand seginfo.
-    """
-    seginfo     dump trace/seginfo, and generate a new seginfo.
-    positional argument     ignored
-    -t, --trace-file=       repeated    path to trace file.
-    -s, --seginfo=          repeated    path to segment info.
-    -m, --strip-mode=       repeated    choose time or callinfo or both to strip.
-    """
     seginfo = subparsers.add_parser('seginfo', help='dump trace/seginfo, and generate a new seginfo')
+    seginfo.add_argument('-t', '--raw-trace', metavar='', action='extend', default=argparse.SUPPRESS, nargs='+', 
+                         help='path to raw trace file')
+    seginfo.add_argument('-s', '--json-trace', metavar='', action='extend', default=argparse.SUPPRESS, nargs='+', 
+                         help='path to json trace file(segment info)')
+    seginfo.add_argument('-m', '--strip-mode', metavar='', action='extend', choices=['time', 'callinfo'], 
+                         default=argparse.SUPPRESS, nargs='+', 
+                         help='choose time or callinfo or both to strip')
+    seginfo.add_argument('-v', '--verbose', action='store_true', 
+                         help='generate detail')
+    seginfo.add_argument('-o', '--output', metavar='', required=True, 
+                         help='path to save seginfo')
     seginfo.set_defaults(func=SeginfoModule.service)
 
     # Add subcommand pwcet.
@@ -516,7 +562,4 @@ if __name__ == "__main__":
         else:
             args.func(args)
     except Exception as error:
-        for proc in childproc:
-            if proc.is_alive():
-                proc.terminate()
         print(traceback.print_exc())

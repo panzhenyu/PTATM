@@ -38,16 +38,17 @@ class TraceCollector:
     @staticmethod
     def collectTrace(command: str, clock: str) -> tuple:
         record = "perf record -e %s -aR -k %s -o %s %s" % (TraceCollector.PROBE_ALL, clock, TraceCollector.RECORD_FILE, command)
+        record = "perf record -e %s -aR -o %s %s" % (TraceCollector.PROBE_ALL, TraceCollector.RECORD_FILE, command)
         script = "perf script -F time,event -i %s" % TraceCollector.RECORD_FILE
 
         # Use perf record to collect trace.
         if not TraceCollector.exec(record):
-            return (False, "Record command " + command + " failed.\n")
+            return (False, "Record command " + command + " failed.")
 
         # Use perf script to dump trace.
         traceinfo_result = TraceCollector.execWithResult(script)
         if traceinfo_result.returncode != 0:
-            return (False, "Cat trace file failed.\n")
+            return (False, "Cat trace file failed.")
         
         # Fetch trace info from perf script result.
         return (True, TraceCollector.fetchSegmentAndTime(traceinfo_result.stdout.decode('utf-8')))
