@@ -527,30 +527,76 @@ class PWCETModule:
 
     @staticmethod
     def service(args):
+        from SegmentInfoCollector import TraceTool
+        from PWCETGenerator import EVTTool, PWCETSolver
+
         # Set default value for function & prob.
         if not hasattr(args, 'function'):
             args.function = ['main']
         if not hasattr(args, 'prob'):
             args.prob = [10**-x for x in range(1, 10)]
 
-        print('seginfo', args.seginfo)
-        print('function', args.function)
-        print('evt_type', args.evt_type)
-        print('force', args.force)
-        print('prob', args.prob)
-        print('mode', args.mode)
-        print('verbose', args.verbose)
-        print('output', args.output)
-
-        # Check whether output is exist.
-        if os.path.exists(args.output):
-            raise Exception('Output[%s] is already exist.' % args.output)
-        
         # Check default value for evt_type & mode.
         if args.evt_type not in PWCETModule.EVT:
             raise Exception('Unrecognized evt-type[%s].' % args.evt_type)
         if args.mode not in PWCETModule.MODE:
             raise Exception('Unrecognized mode[%s].' % args.mode)
+        
+        # Check whether output is exist.
+        if args.mode != 'txt' and os.path.exists(args.output):
+            raise Exception('Output[%s] is already exist.' % args.output)
+
+        # Create trace object.
+        if args.verbose:
+            info('Build trace object(seginfo) for %s.' % args.seginfo)
+        traceobj = TraceTool.Trace()
+        TraceTool.JsonTraceFiller(traceobj).fill(open(args.seginfo, 'r').read())
+
+        # Initialize solver with evt_type.
+        if args.verbose:
+            info('Generate solver with evt-type[%s].' % args.evt_type)
+        if args.evt_type == 'GEV':
+            solver = PWCETSolver.GumbelSegmentListSolver()
+        elif args.evt_type == 'GPD':
+            solver = PWCETSolver.ExponentialParetoSegmentListSolver()
+        
+        # Solve trace object.
+        if args.verbose:
+            info('Solve with force=%s.' % str(args.force))
+        if not solver.solve(traceobj, args.force):
+            raise Exception('Failed to solve seginfo[%s].\n[%s]' % (args.seginfo, solver.err_msg))
+        
+        # Save solve result.
+        if args.verbose:
+            info('Save solve result into %s.' % args.seginfo)
+        with open(args.seginfo, 'w') as seginfo:
+            seginfo.write(TraceTool.JsonTraceSerializer(4).serialize(traceobj))
+
+        # Get distribution for each function.
+        distribution = dict()
+        for fname in args.function:
+            if args.verbose:
+                info('Generate distribution for function[%s].' % fname)
+            lextd = solver.lextd4Function(fname)
+            if lextd == None:
+                raise Exception('Failed to generate distribution for function[%s], try to use -F.' % fname)
+            distribution[fname] = lextd
+
+        # Generate result.
+        if args.verbose:
+            info('Generate result into %s with mode[%s].' % (args.output, args.mode))
+        if args.mode == 'txt':
+            with open(args.output, 'a') as output:
+                # Write head line.
+                headline = reduce(lambda x, y: str(x)+','+str(y), ['function'] + args.prob) + '\n'
+                output.write(headline)
+                # Write pwcet estimate for each function.
+                for fname in args.function:
+                    pwcet = [round(distribution[fname].isf(p), 4) for p in args.prob]
+                    body = reduce(lambda x, y: str(x)+','+str(y), [fname] + pwcet) + '\n'
+                    output.write(body)
+        elif args.mode == 'png':
+            pass
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='pwcet analysis service.')
