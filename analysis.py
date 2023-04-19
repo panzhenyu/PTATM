@@ -110,27 +110,26 @@ Provide pwcet analysis service.
             seginfo: segment information in json format, see SegmentInforCollector/TraceTool.py for detail.
 
     pwcet       generate pwcet result, build arguments of extreme distribution for segment and expression for function.
-        positional argument     reuqired    path to segment info.
+        positional argument     reuqired    path to segment information(or json trace).
         -f, --function=         repeated    target functions to generate, default is main only.
         -t, --evt-type=         optional    choose type of EVT family(GEV or GPD), default is GPD.
         -F, --force             optional    force to rebuild arguments of extreme distribution and expressions, even if they are already exist.
-        -p, --prob=             repeated    exceedance probability, default is 1e-6.
-        -v, --verbose           optional    generate pwcet curve of each function.
-        -o, --output=           optional    path to output directory to save modified segment info and intermediate result, default is current dir.
+        -p, --prob=             repeated    exceedance probability, default is [1e-1, ..., 1e-9].
+        -m, --mode=             optional    output mode, choose txt or png, default is txt.
+        -v, --verbose           optional    generate detail.
+        -o, --output=           required    path to save pwcet result.
 
         [input]
             [positional argument]
                 File of segment information in json format, see SegmentInforCollector/TraceTool.py for detail.
 
-        [verbose]
-            ${func}-pwcet.png: pwcet curve for ${func}.
-
         [output]
-            stdout: pwcet under exceedance probability(prob), format:
+            when mode is txt, then we output a text file with format:
             function,prob1,prob2,...
             func1,pWCET11,pWCET12,...
             func2,pWCET21,pWCET22,...
             ...
+            when mode is png, then we output a png file with pwcet curve for each function.
         
         [note]
             We will save arguments of extreme distribution and expressions into the file provided 
@@ -522,10 +521,36 @@ class SeginfoModule:
             outfile.write(TraceTool.JsonTraceSerializer(4).serialize(traceobj))
 
 class PWCETModule:
+    # MACRO for service.
+    EVT = { 'GEV': None, 'GPD': None }
+    MODE = { 'txt': None, 'png': None }
 
     @staticmethod
     def service(args):
-        pass
+        # Set default value for function & prob.
+        if not hasattr(args, 'function'):
+            args.function = ['main']
+        if not hasattr(args, 'prob'):
+            args.prob = [10**-x for x in range(1, 10)]
+
+        print('seginfo', args.seginfo)
+        print('function', args.function)
+        print('evt_type', args.evt_type)
+        print('force', args.force)
+        print('prob', args.prob)
+        print('mode', args.mode)
+        print('verbose', args.verbose)
+        print('output', args.output)
+
+        # Check whether output is exist.
+        if os.path.exists(args.output):
+            raise Exception('Output[%s] is already exist.' % args.output)
+        
+        # Check default value for evt_type & mode.
+        if args.evt_type not in PWCETModule.EVT:
+            raise Exception('Unrecognized evt-type[%s].' % args.evt_type)
+        if args.mode not in PWCETModule.MODE:
+            raise Exception('Unrecognized mode[%s].' % args.mode)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='pwcet analysis service.')
@@ -587,17 +612,23 @@ if __name__ == "__main__":
     seginfo.set_defaults(func=SeginfoModule.service)
 
     # Add subcommand pwcet.
-    """
-    pwcet       generate pwcet result, build arguments of extreme distribution for segment and expression for function.
-    positional argument     reuqired    path to segment info.
-    -f, --function=         repeated    target functions to generate, default is main only.
-    -t, --evt-type=         optional    choose type of EVT family(GEV or GPD), default is GPD.
-    -F, --force             optional    force to rebuild arguments of extreme distribution and expressions, even if they are already exist.
-    -p, --prob=             repeated    exceedance probability, default is 1e-6.
-    -v, --verbose           optional    generate pwcet curve of each function.
-    -o, --output=           optional    path to output directory to save modified segment info and intermediate result, default is current dir.
-    """
     pwcet = subparsers.add_parser('pwcet', help='generate pwcet result, build arguments of extreme distribution for segment and expression for function')
+    pwcet.add_argument('seginfo', 
+                         help='path to segment information(or json trace)')
+    pwcet.add_argument('-f', '--function', metavar='', action='extend', default=argparse.SUPPRESS, nargs='+', 
+                         help='target functions to generate, default is main only')
+    pwcet.add_argument('-t', '--evt-type', choices=list(PWCETModule.EVT.keys()), default='GPD', 
+                         help='choose type of EVT family(GEV or GPD), default is GPD')
+    pwcet.add_argument('-F', '--force', action='store_true', 
+                         help='force to rebuild arguments of extreme distribution and expressions, even if they are already exist')
+    pwcet.add_argument('-p', '--prob', metavar='', type=float, action='extend', default=argparse.SUPPRESS, nargs='+', 
+                         help='exceedance probability, default is [1e-1, ..., 1e-9]')
+    pwcet.add_argument('-m', '--mode', choices=list(PWCETModule.MODE.keys()), default='txt', 
+                         help='output mode, choose txt or png, default is txt')
+    pwcet.add_argument('-v', '--verbose', action='store_true', 
+                         help='generate detail')
+    pwcet.add_argument('-o', '--output', metavar='', required=True, 
+                         help='path to save pwcet result')
     pwcet.set_defaults(func=PWCETModule.service)
 
     try:
