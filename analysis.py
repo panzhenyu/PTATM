@@ -211,6 +211,7 @@ class SegmentModule:
             info('Save result into %s' % args.output)
         with open(args.output, 'a') as output:
             output.write('\n' + reduce(lambda x, y: x + ',' + y, probes))
+        info('Done.')
 
 class ControlModule:
     # MACRO for gencarsim.
@@ -343,6 +344,7 @@ class ControlModule:
                 raise Exception(result.stderr.decode('utf-8'))
         else:
             raise Exception('Invalid llc_wcar[None].')
+        info('Done.')
 
 class CollectModule:
     # MACRO for service.
@@ -480,6 +482,7 @@ class CollectModule:
                     proc.terminate()
             # Close output.
             outfile.close()
+        info('Done.')
 
 class SeginfoModule:
     # MACRO for service.
@@ -533,6 +536,7 @@ class SeginfoModule:
             info('Output seginfo into %s.' % args.output)
         with open(args.output, 'w') as outfile:
             outfile.write(TraceTool.JsonTraceSerializer(4).serialize(traceobj))
+        info('Done.')
 
 class PWCETModule:
     # MACRO for service.
@@ -610,7 +614,8 @@ class PWCETModule:
                     body = reduce(lambda x, y: str(x)+','+str(y), [fname] + pwcet)
                     output.write('\n' + body)
         elif args.mode == 'png':
-            pass
+            warn('Cannot generate png at present, nothing to output.')
+        info('Done.')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='pwcet analysis service.')
