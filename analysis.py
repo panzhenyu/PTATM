@@ -1,5 +1,5 @@
 from functools import reduce
-import os, sys, math, json, random, signal, traceback, argparse, subprocess, multiprocessing
+import os, sys, math, json, datetime, random, signal, traceback, argparse, subprocess, multiprocessing
 
 helper = """
 Usage: python3 analysis.py command [options] ...
@@ -10,17 +10,18 @@ Provide pwcet analysis service.
         positional argument     required    path to binary file.
         -f, --function=         repeated    interested functions, default is main only.
         -s, --max-seg=          optional    max segment num, default is 2.
+        -v, --verbose           optional    generate detail.
+        -o, --output=           required    path to save segment result.
 
         [output]
-            stdout: probes separate by ','.
+            Append probes separate by ',' into output.
 
     control     generate shared resource controller of taskset.
         positional argument     required    path to file includes parallel tasks.
         -w, --llc-wcar=         optional    use llc wcar to generate resource controller.
         -F, --force             optional    force to measure wcar for each task.
         -v, --verbose           optional    generate detail.
-        -o, --output=           required    path to save control task file.
-        
+        -o, --output=           required    path to save control task.
 
         [input]
             [positional argument]
@@ -38,7 +39,7 @@ Provide pwcet analysis service.
                 An integer hints a cache access occurs every ${llc-wcar} instructions.
 
         [output]
-            stdout: none.
+            Executable file of control task.
 
         [note]
             We will save wcar result into the file provided by positional argument.
@@ -79,7 +80,7 @@ Provide pwcet analysis service.
                 }
 
         [output]
-            trace: trace information in text format.
+            Append trace information into trace file, the trace format is:
             [${binary} ${args}]
             time1,uprobe1
             ...
@@ -107,7 +108,7 @@ Provide pwcet analysis service.
                 Strip callinfo will make an unique callinfo list for seginfo file.
 
         [output]
-            seginfo: segment information in json format, see SegmentInforCollector/TraceTool.py for detail.
+            Segment information in json format, see SegmentInforCollector/TraceTool.py for detail.
 
     pwcet       generate pwcet result, build arguments of extreme distribution for segment and expression for function.
         positional argument     reuqired    path to segment information(or json trace).
@@ -124,12 +125,12 @@ Provide pwcet analysis service.
                 File of segment information in json format, see SegmentInforCollector/TraceTool.py for detail.
 
         [output]
-            when mode is txt, then we output a text file with format:
+            When mode is txt, then we append pwcet estimate for each function into output, the format is:
             function,prob1,prob2,...
             func1,pWCET11,pWCET12,...
             func2,pWCET21,pWCET22,...
-            ...
-            when mode is png, then we output a png file with pwcet curve for each function.
+            pwcet estimate for other function...
+            When mode is png, then we output a png file with pwcet curve for each function.
         
         [note]
             We will save arguments of extreme distribution and expressions into the file provided 
@@ -150,32 +151,44 @@ def execWithProcess(shellcmd: str):
 def issudo() -> bool:
     return os.getuid() == 0
 
+def report(s: str):
+    sys.stdout.write('[%s] %s\n' % (datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), s))
+
 def info(s: str):
-    sys.stdout.write('[INFO] ' + s + '\n')
+    report('[INFO] %s' % s)
 
 def warn(s: str):
-    sys.stdout.write('[WARN] ' + s + '\n')
+    report('[WARN] %s' % s)
 
 class SegmentModule:
     @staticmethod
-    def genprobes(binary: str, functions: list, max_seg: int):
+    def genprobes(binary: str, functions: list, max_seg: int, verbose: bool):
         import angr
         from CFG2Segment import CFGBase, CFGRefactor, SFGBase, SFGBuilder
 
         # Parse binary with angr.
+        if verbose:
+            info('Build angr cfg for binary[%s].' % binary)
         angr_project = angr.Project(binary, load_options={'auto_load_libs': False})
         angr_cfg = angr_project.analyses.CFGFast()
 
         # Refactor CFG.
+        if verbose:
+            info('Refactor angr cfg.')
         cfg = CFGBase.CFG(angr_cfg)
         cfg_refactor = CFGRefactor.FunctionalCFGRefactor()
         refactor_result = cfg_refactor.refactor(cfg)
 
         # Build SFG.
+        if verbose:
+            info('Segment cfg with max_seg[%d] for function%s.' % (max_seg, functions))
         sfg = SFGBase.SFG(cfg)
         sfg_builder = SFGBuilder.FunctionalSFGBuilder(max_seg, functions)
         build_result = sfg_builder.build(sfg)
 
+        # Dump uprobes.
+        if verbose:
+            info('Dump uprobes.')
         probes = []
         for name in functions:
             segfunc = sfg.getSegmentFunc(name)
@@ -187,16 +200,17 @@ class SegmentModule:
                 probe_suffix = segfunc.name + ("+" + offset if offset != "0x0" else '')
                 probes.append(probe_prefix + probe_suffix)
             probes.append(segfunc.name + "=" + segfunc.name + r"%return")
-
-        # Output refactor result and build result to stderr?
         return probes
 
     @staticmethod
     def service(args):
         if not hasattr(args, 'function'):
             args.function = ['main']
-        probes = SegmentModule.genprobes(args.binary, args.function, args.max_seg)
-        sys.stdout.write(reduce(lambda x, y: x + ',' + y, probes))
+        probes = SegmentModule.genprobes(args.binary, args.function, args.max_seg, args.verbose)
+        if args.verbose:
+            info('Save result into %s' % args.output)
+        with open(args.output, 'a') as output:
+            output.write('\n' + reduce(lambda x, y: x + ',' + y, probes))
 
 class ControlModule:
     # MACRO for gencarsim.
@@ -588,13 +602,13 @@ class PWCETModule:
         if args.mode == 'txt':
             with open(args.output, 'a') as output:
                 # Write head line.
-                headline = reduce(lambda x, y: str(x)+','+str(y), ['function'] + args.prob) + '\n'
-                output.write(headline)
+                headline = reduce(lambda x, y: str(x)+','+str(y), ['function'] + args.prob)
+                output.write('\n' + headline)
                 # Write pwcet estimate for each function.
                 for fname in args.function:
                     pwcet = [round(distribution[fname].isf(p), 4) for p in args.prob]
-                    body = reduce(lambda x, y: str(x)+','+str(y), [fname] + pwcet) + '\n'
-                    output.write(body)
+                    body = reduce(lambda x, y: str(x)+','+str(y), [fname] + pwcet)
+                    output.write('\n' + body)
         elif args.mode == 'png':
             pass
 
@@ -612,6 +626,10 @@ if __name__ == "__main__":
                          help='function name, default is main only')
     segment.add_argument('-s', '--max-seg', metavar='', type=int, default=2, 
                          help='max segment num, default is 2')
+    segment.add_argument('-v', '--verbose', action='store_true', 
+                         help='generate detail')
+    segment.add_argument('-o', '--output', metavar='', required=True, 
+                         help='path to save segment result')
     segment.set_defaults(func=SegmentModule.service)
 
     # Add subcommand control.
@@ -625,7 +643,7 @@ if __name__ == "__main__":
     control.add_argument('-v', '--verbose', action='store_true', 
                          help='generate detail')
     control.add_argument('-o', '--output', metavar='', required=True, 
-                         help='path to save control task file')
+                         help='path to save control task')
     control.set_defaults(func=ControlModule.service)
 
     # Add subcommand collect.
