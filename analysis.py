@@ -86,8 +86,8 @@ Provide pwcet analysis service.
 
     seginfo     dump trace/seginfo, and generate a new seginfo.
         positional argument     ignored
-        -t, --raw-trace=        repeated    path to raw trace file.
-        -s, --json-trace=       repeated    path to json trace file(segment info).
+        -r, --raw-trace=        repeated    path to raw trace file.
+        -j, --json-trace=       repeated    path to json trace file(segment info).
         -m, --strip-mode=       repeated    choose time or callinfo or both to strip.
         -v, --verbose           optional    generate detail.
         -o, --output=           required    path to save seginfo.
@@ -286,7 +286,7 @@ class ControlModule:
 
         if not issudo():
             raise Exception('You should run as a sudoer.')
-        
+
         if os.path.exists(args.output):
             raise Exception('Output[%s] is already exist.' % args.output)
 
@@ -333,6 +333,7 @@ class ControlModule:
 
 class CollectModule:
     # MACRO for service.
+    RANDOMIZER  = root + '/L3Contention/RandomizeBuddy'
     TARGET      = 'target'
     CONTENDER   = 'contender'
     CORE        = 'core'
@@ -451,8 +452,10 @@ class CollectModule:
                         command = cmdpat % (core, in_vec)
                         if args.verbose:
                             info('Collect for command[%s] at %d time.' % (command, r+1))
+                        # Randomize buddy.
+                        exec(ControlModule.RANDOMIZER)
                         traceinfo = CollectModule.gentrace(binary, command, uprobes, args.clock)
-                        outfile.write('\n[%s]\n'%command + traceinfo)
+                        outfile.write('\n[%s] [%s]\n' % (command, args.clock) + traceinfo)
                         outfile.flush()
         except Exception as error:
             raise error
@@ -466,10 +469,57 @@ class CollectModule:
             outfile.close()
 
 class SeginfoModule:
-    
+    # MACRO for service.
+    MODE = { 'time': None, 'callinfo': None }
     @staticmethod
     def service(args):
-        pass
+        from SegmentInfoCollector import TraceTool
+        # Check whether output is exist.
+        if os.path.exists(args.output):
+            raise Exception('Output[%s] is already exist.' % args.output)
+
+        # Check whether there is something to do with trace.
+        nr_trace = len(args.raw_trace) + len(args.json_trace)
+        if nr_trace == 0:
+            warn('Nothing to dump.')
+            return
+        elif nr_trace == 1 and len(args.json_trace) == 1 and not hasattr(args, 'strip_mode'):
+            warn('Nothing to dump for single json trace without strip mode selected.')
+            return
+
+        # Build trace object(seginfo).
+        traceobj = TraceTool.Trace()
+        # Fill raw trace.
+        rawfiller = TraceTool.RawTraceStringFiller(traceobj)
+        jsonfiller = TraceTool.JsonTraceFiller(traceobj)
+        for rtrace in args.raw_trace:
+            if args.verbose:
+                info('Build raw trace[%s].' % rtrace)
+            if rawfiller.fill(open(rtrace, 'r').read()) == False:
+                raise Exception("Build raw trace[%s] failed with err_msg[%s]." % (rtrace, rawfiller.err_msg))
+        # Fill json trace.
+        for jtrace in args.json_trace:
+            if args.verbose:
+                info('Build json trace[%s].' % jtrace)
+            if jsonfiller.fill(open(jtrace, 'r').read()) == False:
+                raise Exception("Build json trace[%s] failed with err_msg[%s]." % (jtrace, jsonfiller.err_msg))
+        # Strip trace object(seginfo).
+        if hasattr(args, 'strip_mode'):
+            for mode in args.strip_mode:
+                stripper = None
+                if mode == 'time':
+                    stripper = TraceTool.CostTimeStripper(traceobj)
+                elif mode == 'callinfo':
+                    stripper = TraceTool.CallinfoStripper(traceobj)
+                if args.verbose:
+                    info('Strip seginfo with mode[%s].' % mode)
+                if stripper is not None and stripper.strip() == False:
+                    raise Exception("Strip trace failed at mode[%s] with err_msg[%s]." % (mode, stripper.err_msg))
+        # Output trace object(seginfo).
+        if args.verbose:
+            info('Output seginfo into %s.' % args.output)
+        with open(args.output, 'w') as outfile:
+            outfile.write(TraceTool.JsonTraceSerializer(4).serialize(traceobj))
 
 class PWCETModule:
 
@@ -523,11 +573,11 @@ if __name__ == "__main__":
 
     # Add subcommand seginfo.
     seginfo = subparsers.add_parser('seginfo', help='dump trace/seginfo, and generate a new seginfo')
-    seginfo.add_argument('-t', '--raw-trace', metavar='', action='extend', default=argparse.SUPPRESS, nargs='+', 
+    seginfo.add_argument('-r', '--raw-trace', metavar='', action='extend', default=list(), nargs='+', 
                          help='path to raw trace file')
-    seginfo.add_argument('-s', '--json-trace', metavar='', action='extend', default=argparse.SUPPRESS, nargs='+', 
+    seginfo.add_argument('-j', '--json-trace', metavar='', action='extend', default=list(), nargs='+', 
                          help='path to json trace file(segment info)')
-    seginfo.add_argument('-m', '--strip-mode', metavar='', action='extend', choices=['time', 'callinfo'], 
+    seginfo.add_argument('-m', '--strip-mode', action='extend', choices=list(SeginfoModule.MODE.keys()), 
                          default=argparse.SUPPRESS, nargs='+', 
                          help='choose time or callinfo or both to strip')
     seginfo.add_argument('-v', '--verbose', action='store_true', 
