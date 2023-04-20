@@ -241,6 +241,8 @@ class ControlModule:
 
     @staticmethod
     def gencarsim(car, output):
+        if car <= 5:
+            warn('CAR[%d] is too small to simulate, adjust it to worst.' % car)
         nopstr = ControlModule.NOP * (0 if car <= 5 else 2*car - 11)
         cmd = ControlModule.SIMCMD % (nopstr, output, ControlModule.SIMSRC)
         return execWithResult(cmd)
