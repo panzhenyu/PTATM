@@ -241,7 +241,7 @@ class ControlModule:
 
     @staticmethod
     def gencarsim(car, output):
-        nopstr = ControlModule.NOP * max(0, car-6)
+        nopstr = ControlModule.NOP * (0 if car <= 5 else 2*car - 11)
         cmd = ControlModule.SIMCMD % (nopstr, output, ControlModule.SIMSRC)
         return execWithResult(cmd)
 

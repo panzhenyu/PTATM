@@ -26,13 +26,18 @@ int setfifo() {
 }
 
 void accessL3() {
-    register uint64_t base, end, cur;
-    base = cur = (uint64_t)huge;
-    end = base + PGSIZE;
+    register uint64_t p1, p2, p1base, p2base, step, p1end, p2end;
+    p1 = p1base = (uint64_t)huge;
+    p2 = p2base = (uint64_t)huge + BLKSIZE;
+    step = BLKSIZE << 1;
+    p2end = p1base + PGSIZE;
+    p1end = p2end - BLKSIZE;
     while (1) {
-        var = *(void**)cur;
+        var = *(void**)p1;
+        var = *(void**)p2;
         asm volatile (NOPSTR);
-        cur = cur + BLKSIZE >= end ? base : cur + BLKSIZE;
+        p1 = p1 + step >= p1end ? p1base : p1 + step;
+        p2 = p2 + step >= p2end ? p2base : p2 + step;
     }
 }
 
