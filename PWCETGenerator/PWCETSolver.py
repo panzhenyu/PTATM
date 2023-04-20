@@ -124,8 +124,9 @@ class SegmentListSolver(GeneralPWCETSolver):
                     # Add function cost to cur_expr.
                     for callee, nr_callee in max_callseq.items():
                         for segname, nr_seg in self.func_expr[callee].items():
-                            cur_expr.setdefault(segname, 0)
-                            cur_expr[segname] += nr_seg * nr_callee
+                            if nr_seg != 0 and nr_callee != 0:
+                                cur_expr.setdefault(segname, 0)
+                                cur_expr[segname] += nr_seg * nr_callee
             if rebuild_expr:
                 # Save expr into trace, cause we rebuild it.
                 ftrace[TraceTool.Trace.KEY_FULLCOST][GeneralPWCETSolver.TAG_EXPR] = cur_expr

@@ -98,8 +98,9 @@ class LinearCombinedExtremeDistribution(PWCETInterface):
         return linear_extd
 
     def add(self, extd_func: ExtremeDistribution, weight: int = 1) -> bool:
-        self.weighted_extdfunc.setdefault(extd_func, 0)
-        self.weighted_extdfunc[extd_func] += weight
+        if weight != 0:
+            self.weighted_extdfunc.setdefault(extd_func, 0)
+            self.weighted_extdfunc[extd_func] += weight
         return True
     
     def addLinear(self, linear_extd) -> bool:
