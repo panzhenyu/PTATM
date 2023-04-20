@@ -26,18 +26,26 @@ int setfifo() {
 }
 
 void accessL3() {
-    register uint64_t p1, p2, p1base, p2base, step, p1end, p2end;
+    register uint64_t p1, p2, p3, p4, p1base, p2base, p3base, p4base, step, p1end, p2end, p3end, p4end;
     p1 = p1base = (uint64_t)huge;
-    p2 = p2base = (uint64_t)huge + BLKSIZE;
-    step = BLKSIZE << 1;
-    p2end = p1base + PGSIZE;
+    p2 = p2base = (uint64_t)p1base + BLKSIZE;
+    p3 = p3base = (uint64_t)p2base + BLKSIZE;
+    p4 = p4base = (uint64_t)p3base + BLKSIZE;
+    step = BLKSIZE << 2;
+    p4end = p1base + PGSIZE;
+    p3end = p4end - BLKSIZE;
+    p2end = p3end - BLKSIZE;
     p1end = p2end - BLKSIZE;
     while (1) {
         var = *(void**)p1;
         var = *(void**)p2;
+        var = *(void**)p3;
+        var = *(void**)p4;
         asm volatile (NOPSTR);
         p1 = p1 + step >= p1end ? p1base : p1 + step;
         p2 = p2 + step >= p2end ? p2base : p2 + step;
+        p3 = p3 + step >= p3end ? p3base : p3 + step;
+        p4 = p4 + step >= p4end ? p4base : p4 + step;
     }
 }
 
