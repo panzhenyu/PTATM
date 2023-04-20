@@ -341,7 +341,8 @@ class ControlModule:
 
         # Generate car simulator with llc_wcar.
         if llc_wcar is not None:
-            info('Generate control task at output[%s].' % args.output)
+            if args.verbose:
+                info('Generate control task at output[%s].' % args.output)
             result = ControlModule.gencarsim(llc_wcar, args.output)
             if 0 != result.returncode:
                 raise Exception(result.stderr.decode('utf-8'))
