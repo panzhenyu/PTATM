@@ -241,7 +241,9 @@ class ControlModule:
 
     @staticmethod
     def gencarsim(car, output):
-        nopstr = ControlModule.NOP * max(0, car-6)
+        if car <= 5:
+            warn('CAR[%d] is too small to simulate, adjust it to worst.' % car)
+        nopstr = ControlModule.NOP * (0 if car <= 5 else 2*car - 11)
         cmd = ControlModule.SIMCMD % (nopstr, output, ControlModule.SIMSRC)
         return execWithResult(cmd)
 
@@ -339,7 +341,8 @@ class ControlModule:
 
         # Generate car simulator with llc_wcar.
         if llc_wcar is not None:
-            info('Generate control task at output[%s].' % args.output)
+            if args.verbose:
+                info('Generate control task at output[%s].' % args.output)
             result = ControlModule.gencarsim(llc_wcar, args.output)
             if 0 != result.returncode:
                 raise Exception(result.stderr.decode('utf-8'))
