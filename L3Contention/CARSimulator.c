@@ -9,7 +9,7 @@
 #define NR_ASSOC    (88)
 #define BLKSIZE     (64)
 #define CACHESIZE   (NR_SET*NR_ASSOC*BLKSIZE)
-#define PGSIZE      (8*CACHESIZE)
+#define PGSIZE      (2*CACHESIZE)
 #define NR_BLK      (PGSIZE/BLKSIZE)
 
 void *huge, *var;
