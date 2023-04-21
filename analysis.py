@@ -394,7 +394,6 @@ class CollectModule:
         gencmd = lambda task: 'cd %s && taskset -c %d %s' % (task[CollectModule.DIR], core, task[CollectModule.CMD])
         while True:
             contender_id = random.randint(0, nr_contender-1)
-            info('run contender[%s].' % str(contenders[contender_id]))
             exec(gencmd(contenders[contender_id]))
 
     @staticmethod
