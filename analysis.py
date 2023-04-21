@@ -140,13 +140,10 @@ Provide pwcet analysis service.
 root = os.getenv('PTATM', 'None')
 
 def exec(shellcmd: str) -> bool:
-    return 0 == subprocess.run(shellcmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode
+    return 0 == subprocess.run(shellcmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
 
 def execWithResult(shellcmd: str):
     return subprocess.run(shellcmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-def execWithProcess(shellcmd: str):
-    return subprocess.Popen(shellcmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 def issudo() -> bool:
     return os.getuid() == 0
@@ -397,8 +394,8 @@ class CollectModule:
         gencmd = lambda task: 'cd %s && taskset -c %d %s' % (task[CollectModule.DIR], core, task[CollectModule.CMD])
         while True:
             contender_id = random.randint(0, nr_contender-1)
-            proc = execWithProcess(gencmd(contenders[contender_id]))
-            proc.wait()
+            info('run contender[%s].' % str(contenders[contender_id]))
+            exec(gencmd(contenders[contender_id]))
 
     @staticmethod
     def checkconf(conf: dict):
