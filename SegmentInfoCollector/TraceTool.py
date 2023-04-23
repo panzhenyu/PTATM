@@ -171,7 +171,7 @@ class RawTraceStringFiller(TraceFiller):
                         callstack.append((time, funcname))
                         if last_segname != None:
                             # A function call occurs on last_segment.
-                            seg_callinfo.setdefault(last_funcname, dict()).setdefault(last_segname, list()).append(funcname)
+                            seg_callinfo.setdefault(last_funcname, dict()).setdefault(last_segname, set()).add(funcname)
                 elif last_funcname != funcname:
                     self.err_msg += "last_funcname(%s) != funcname(%s)\n" % (last_funcname, funcname)
                     return None
@@ -207,7 +207,7 @@ class RawTraceStringFiller(TraceFiller):
                     traceObject.getSegmentNormcost(fname, seg).setdefault(Trace.COST_TIME, list()).append(cost)
             for fname, segcall in seg_callinfo.items():
                 for seg, callinfo in segcall.items():
-                    traceObject.getSegmentCallInfo(fname, seg).append(callinfo)
+                    traceObject.getSegmentCallInfo(fname, seg).append(list(callinfo))
 
             # Repair format for traceObject.dump.
             DumpFiller(traceObject).fill()
@@ -308,7 +308,7 @@ class CallinfoStripper(TraceStripper):
         for fdump in self.trace.dump.values():
             for segname, value in fdump.items():
                 if segname != Trace.KEY_FULLCOST:
-                    callinfo = [tuple(set(calleelist)) for calleelist in value[Trace.KEY_CALLINFO]]
+                    callinfo = [tuple(calleelist) for calleelist in value[Trace.KEY_CALLINFO]]
                     stripped = [list(uniquelist) for uniquelist in set(callinfo)]
                     value[Trace.KEY_CALLINFO] = stripped
         return True
