@@ -586,12 +586,6 @@ class PWCETModule:
             info('Solve with force=%s.' % str(args.force))
         if not solver.solve(traceobj, args.force):
             raise Exception('Failed to solve seginfo[%s].\n[%s]' % (args.seginfo, solver.err_msg))
-        
-        # Save solve result.
-        if args.verbose:
-            info('Save solve result into %s.' % args.seginfo)
-        with open(args.seginfo, 'w') as seginfo:
-            seginfo.write(TraceTool.JsonTraceSerializer(4).serialize(traceobj))
 
         # Get distribution for each function.
         distribution = dict()
@@ -618,6 +612,13 @@ class PWCETModule:
                     output.write('\n' + body)
         elif args.mode == 'png':
             warn('Cannot generate png at present, nothing to output.')
+
+        # Save solve result.
+        if args.verbose:
+            info('Save solve result into %s.' % args.seginfo)
+        with open(args.seginfo, 'w') as seginfo:
+            seginfo.write(TraceTool.JsonTraceSerializer(4).serialize(traceobj))
+
         if args.verbose:
             info('Done.')
 
