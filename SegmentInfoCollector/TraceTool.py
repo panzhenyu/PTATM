@@ -304,7 +304,7 @@ class CostTimeStripper(TraceStripper):
                 if segname != Trace.KEY_FULLCOST:
                     value[Trace.KEY_NORMCOST][Trace.COST_TIME] = max(value[Trace.KEY_NORMCOST][Trace.COST_TIME])
                 else:
-                    value[Trace.COST_TIME] = max(value[Trace.COST_TIME])
+                    value[Trace.COST_TIME] = [max(value[Trace.COST_TIME])]
         return True
 
 # Shrink function list in KEY_CALLINFO to one max element.
