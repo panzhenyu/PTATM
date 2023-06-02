@@ -204,12 +204,15 @@ class SegmentModule:
         if not hasattr(args, 'function'):
             args.function = ['main']
         probes = SegmentModule.genprobes(args.binary, args.function, args.max_seg, args.verbose)
-        if args.verbose:
-            info('Save result into %s' % args.output)
-        with open(args.output, 'a') as output:
-            output.write('\n' + reduce(lambda x, y: x + ',' + y, probes))
-        if args.verbose:
-            info('Done.')
+        if len(probes) != 0:
+            if args.verbose:
+                info('Save result into %s' % args.output)
+            with open(args.output, 'a') as output:
+                output.write('\n' + reduce(lambda x, y: x + ',' + y, probes))
+            if args.verbose:
+                info('Done.')
+        elif args.verbose:
+            info('Nothing to segment, check func arguments.')
 
 class ControlModule:
     # MACRO for gencarsim.
